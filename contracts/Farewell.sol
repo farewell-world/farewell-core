@@ -10,40 +10,41 @@ import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 /// - Anyone can call `claim` after timeout; we emit an event with (email, data).
 /// - On-chain data is public. Treat `data` as ciphertext in real use.
 contract Farewell is SepoliaConfig {
-    struct UserConfig {
+
+    // Notifier is the entitiy that marked a user as deceased
+    struct Notifier {
+        uint64 notificationTime; // seconds
+        address notifierAddress;
+    }
+
+    struct User {
         uint64 checkInPeriod; // seconds
         uint64 gracePeriod; // seconds
         uint64 lastCheckIn; // timestamp
+        uint64 registeredOn; // timestamp
         bool deceased; // set after timeout
+        Notifier notifier; // who marked as deceased
         euint128 _skShare;
     }
 
     struct Message {
-        string recipientEmail; // human-friendly identifier
-        bytes32 recipientEmailHash; // keccak256(bytes(recipientEmail)) for indexed lookups
+        bytes recipientEmail; // encrypted recipient e-mail
+        bytes data; // encrypted message
         bool delivered;
-        bytes data; // store ciphertext or plaintext (PoC)
     }
 
-    mapping(address => UserConfig) public users;
+    mapping(address => User) public users;
     mapping(address => Message[]) private _messages;
 
-    event UserRegistered(address indexed user, uint64 checkInPeriod, uint64 gracePeriod);
+    event UserRegistered(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
     event Ping(address indexed user, uint64 when);
-    event Deceased(address indexed user, uint64 when);
+    event Deceased(address indexed user, uint64 when, address indexed notifier);
 
-    // Indexed by email hash for efficient filtering; full email included (not indexed)
-    event MessageAdded(
-        address indexed user,
-        uint256 indexed index,
-        bytes32 indexed recipientEmailHash,
-        string recipientEmail
-    );
+    event MessageAdded(address indexed user, uint256 indexed index);
     event MessageClaimed(
         address indexed user,
         uint256 indexed index,
-        bytes32 indexed recipientEmailHash,
-        string recipientEmail,
+        bytes recipientEmail,
         bytes data,
         euint128 skShare
     );
@@ -55,7 +56,8 @@ contract Farewell is SepoliaConfig {
     function registerDefault(externalEuint128 skShare, bytes calldata skShareProof) external {
         uint64 checkInPeriod = DEFAULT_CHECKIN;
         uint64 gracePeriod = DEFAULT_GRACE;
-        UserConfig storage u = users[msg.sender];
+
+        User storage u = users[msg.sender];
         require(u.lastCheckIn == 0, "already registered");
 
         u._skShare = FHE.fromExternal(skShare, skShareProof);
@@ -64,8 +66,10 @@ contract Farewell is SepoliaConfig {
         u.checkInPeriod = checkInPeriod;
         u.gracePeriod = gracePeriod;
         u.lastCheckIn = uint64(block.timestamp);
+        u.registeredOn = uint64(block.timestamp);
         u.deceased = false;
-        emit UserRegistered(msg.sender, checkInPeriod, gracePeriod);
+
+        emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
@@ -75,82 +79,94 @@ contract Farewell is SepoliaConfig {
         externalEuint128 skShare,
         bytes calldata skShareProof
     ) external {
-        UserConfig storage u = users[msg.sender];
+        User storage u = users[msg.sender];
         require(u.lastCheckIn == 0, "already registered");
 
         u._skShare = FHE.fromExternal(skShare, skShareProof);
         FHE.allowThis(u._skShare);
+
+        // The user should be able to change the key share
         FHE.allow(u._skShare, msg.sender);
 
         u.checkInPeriod = checkInPeriod;
         u.gracePeriod = gracePeriod;
         u.lastCheckIn = uint64(block.timestamp);
+        u.registeredOn = uint64(block.timestamp);
         u.deceased = false;
-        emit UserRegistered(msg.sender, checkInPeriod, gracePeriod);
+
+        emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
     function ping() external {
-        UserConfig storage u = users[msg.sender];
+        User storage u = users[msg.sender];
         require(u.checkInPeriod > 0, "not registered");
         require(!u.deceased, "user marked deceased");
-        u.lastCheckIn = uint64(block.timestamp);
-        emit Ping(msg.sender, u.lastCheckIn);
-    }
 
-    function markDeceased(address user) external {
-        UserConfig storage u = users[user];
-        require(u.checkInPeriod > 0, "user not registered");
-        require(!u.deceased, "user already deceased");
-        // timeout condition: now > lastCheckIn + checkInPeriod + grace
-        uint256 deadline = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
-        require(block.timestamp > deadline, "not timed out");
-        u.deceased = true;
-        FHE.allow(u._skShare, msg.sender);
-        users[user] = u;
-        emit Deceased(user, uint64(block.timestamp));
+        u.lastCheckIn = uint64(block.timestamp);
+
+        emit Ping(msg.sender, u.lastCheckIn);
     }
 
     // --- Messages ---
 
-    function addMessage(string calldata recipientEmail, bytes calldata data) external returns (uint256 index) {
-        require(users[msg.sender].checkInPeriod > 0, "register first");
-        require(bytes(recipientEmail).length > 3, "bad email");
-        require(data.length > 0 && data.length <= 2000, "bad size"); // keep small for PoC gas
+    function addMessage(bytes calldata recipientEmail, bytes calldata data) external returns (uint256 index) {
+        // It is expected that both recipientEmail and data to be encrypted at the user side,
+        // otherwise they will be made public.
 
-        bytes32 emailHash = keccak256(bytes(recipientEmail));
-        _messages[msg.sender].push(
-            Message({recipientEmail: recipientEmail, recipientEmailHash: emailHash, delivered: false, data: data})
-        );
+        require(users[msg.sender].checkInPeriod > 0, "user not registered");
+        require(recipientEmail.length > 0, "bad recipientEmail size");
+        require(data.length > 0, "bad data size");
+
+        _messages[msg.sender].push(Message({recipientEmail: recipientEmail, data: data, delivered: false}));
+
         index = _messages[msg.sender].length - 1;
-        emit MessageAdded(msg.sender, index, emailHash, recipientEmail);
+        emit MessageAdded(msg.sender, index);
     }
 
     function messageCount(address user) external view returns (uint256) {
         return _messages[user].length;
     }
 
-    function getMessageMeta(
-        address user,
-        uint256 index
-    ) external view returns (string memory recipientEmail, bytes32 recipientEmailHash, bool delivered) {
-        require(index < _messages[user].length, "invalid index");
-        Message storage m = _messages[user][index];
-        return (m.recipientEmail, m.recipientEmailHash, m.delivered);
+    function markDeceased(address user) external {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "user not registered");
+        require(!u.deceased, "user already deceased");
+
+        // timeout condition: now > lastCheckIn + checkInPeriod + grace
+        uint256 deadline = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
+        require(block.timestamp > deadline, "not timed out");
+
+        // the user is considered from now on as deceased
+        u.deceased = true;
+
+        // the sender who discovered that the user was deceased has priority to claim the message
+        // during the next 24h
+        FHE.allow(u._skShare, msg.sender);
+        
+        u.notifier = Notifier({
+            notificationTime: uint64(block.timestamp),
+            notifierAddress: msg.sender
+        });
+
+        emit Deceased(user, uint64(block.timestamp), u.notifier.notifierAddress);
     }
 
     /// @notice Anyone may trigger delivery after user is deceased.
     /// @dev Emits data+email; mark delivered to prevent duplicates.
     function claim(address user, uint256 index) external view returns (euint128) {
-        UserConfig storage u = users[user];
+        User storage u = users[user];
         require(u.deceased, "not deliverable");
+
+        // if within 24h of notification, only the notifier can claim
+        if (block.timestamp <= uint256(u.notifier.notificationTime) + 24 hours) {
+            require(msg.sender == u.notifier.notifierAddress, "still exclusive for the notifier");
+        }
+        // I need to set this function as view but if I do that I break the test
+        // FHE.allow(u._skShare, msg.sender);
+
         Message storage m = _messages[user][index];
-        require(!m.delivered, "already delivered");
         // m.delivered = true;
         return u._skShare;
-    }
-
-    function getMyAddress() external view returns (address) {
-        return msg.sender;
     }
 }
