@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint128, euint32, externalEuint32, externalEuint128} from "@fhevm/solidity/lib/FHE.sol";
+import {
+    FHE,
+    euint256,
+    euint128,
+    euint32,
+    externalEuint32,
+    externalEuint128,
+    externalEuint256
+} from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /// @title Farewell POC (email-recipient version)
@@ -10,11 +18,29 @@ import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 /// - Anyone can call `claim` after timeout; we emit an event with (email, data).
 /// - On-chain data is public. Treat `data` as ciphertext in real use.
 contract Farewell is SepoliaConfig {
-
     // Notifier is the entitiy that marked a user as deceased
     struct Notifier {
         uint64 notificationTime; // seconds
         address notifierAddress;
+    }
+
+    /// @dev Encrypted recipient “string” as 32-byte limbs (each limb is an euint256) + original length.
+    struct EncryptedString {
+        euint256[] limbs; // each 32 bytes of the UTF-8 email packed as uint256
+        uint32 byteLen; // original email length in bytes (not chars)
+    }
+
+    struct Message {
+        // Encrypted recipient email (coprocessor-backed euints) + encrypted skShare.
+        EncryptedString recipientEmail; // encrypted recipient e-mail
+        euint128 _skShare;
+        // Your payload (already encrypted off-chain, e.g., tar+gpg) is fine to be public bytes
+        bytes payload; // encrypted message
+        uint64 createdAt;
+        bool claimed;
+        address claimedBy;
+        uint256 rcptCommit; // Poseidon(lower(email) || salt), computed off-chain when message is added
+        bytes32 salt; // public salt to recompute commitment inside circuit
     }
 
     struct User {
@@ -24,17 +50,15 @@ contract Farewell is SepoliaConfig {
         uint64 registeredOn; // timestamp
         bool deceased; // set after timeout
         Notifier notifier; // who marked as deceased
-        euint128 _skShare;
-    }
-
-    struct Message {
-        bytes recipientEmail; // encrypted recipient e-mail
-        bytes data; // encrypted message
-        bool delivered;
+        // All messages for this user live here
+        Message[] messages;
     }
 
     mapping(address => User) public users;
-    mapping(address => Message[]) private _messages;
+
+    // -----------------------
+    // Events
+    // -----------------------
 
     event UserRegistered(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
     event Ping(address indexed user, uint64 when);
@@ -49,19 +73,15 @@ contract Farewell is SepoliaConfig {
         euint128 skShare
     );
 
+    event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
+
     // --- User lifecycle ---
     uint64 constant DEFAULT_CHECKIN = 30 days;
     uint64 constant DEFAULT_GRACE = 7 days;
 
-    function registerDefault(externalEuint128 skShare, bytes calldata skShareProof) external {
-        uint64 checkInPeriod = DEFAULT_CHECKIN;
-        uint64 gracePeriod = DEFAULT_GRACE;
-
+    function _register(uint64 checkInPeriod, uint64 gracePeriod) internal {
         User storage u = users[msg.sender];
         require(u.lastCheckIn == 0, "already registered");
-
-        u._skShare = FHE.fromExternal(skShare, skShareProof);
-        FHE.allowThis(u._skShare);
 
         u.checkInPeriod = checkInPeriod;
         u.gracePeriod = gracePeriod;
@@ -73,29 +93,15 @@ contract Farewell is SepoliaConfig {
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
-    function register(
-        uint64 checkInPeriod,
-        uint64 gracePeriod,
-        externalEuint128 skShare,
-        bytes calldata skShareProof
-    ) external {
-        User storage u = users[msg.sender];
-        require(u.lastCheckIn == 0, "already registered");
+    function register(uint64 checkInPeriod, uint64 gracePeriod) external {
+        _register(checkInPeriod, gracePeriod);
+    }
 
-        u._skShare = FHE.fromExternal(skShare, skShareProof);
-        FHE.allowThis(u._skShare);
+    function registerDefault() external {
+        uint64 checkInPeriod = DEFAULT_CHECKIN;
+        uint64 gracePeriod = DEFAULT_GRACE;
 
-        // The user should be able to change the key share
-        FHE.allow(u._skShare, msg.sender);
-
-        u.checkInPeriod = checkInPeriod;
-        u.gracePeriod = gracePeriod;
-        u.lastCheckIn = uint64(block.timestamp);
-        u.registeredOn = uint64(block.timestamp);
-        u.deceased = false;
-
-        emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
-        emit Ping(msg.sender, u.lastCheckIn);
+        _register(checkInPeriod, gracePeriod);
     }
 
     function ping() external {
@@ -110,24 +116,65 @@ contract Farewell is SepoliaConfig {
 
     // --- Messages ---
 
-    function addMessage(bytes calldata recipientEmail, bytes calldata data) external returns (uint256 index) {
-        // It is expected that both recipientEmail and data to be encrypted at the user side,
-        // otherwise they will be made public.
+    function addMessage(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof
+    ) external returns (uint256 index) {
+        // It is expected that payload is encrypted at the user side,
+        // otherwise it will be made public.
+        User storage u = users[msg.sender];
 
-        require(users[msg.sender].checkInPeriod > 0, "user not registered");
-        require(recipientEmail.length > 0, "bad recipientEmail size");
-        require(data.length > 0, "bad data size");
+        require(u.checkInPeriod > 0, "user not registered");
+        require(emailByteLen > 0, "email len=0");
+        require(limbs.length > 0, "no limbs");
+        require(payload.length > 0, "bad payload size");
 
-        _messages[msg.sender].push(Message({recipientEmail: recipientEmail, data: data, delivered: false}));
+        // limbs count must match ceil(emailByteLen / 32)
+        uint256 expected = (uint256(emailByteLen) + 31) / 32;
+        require(limbs.length == expected, "limb count mismatch");
 
-        index = _messages[msg.sender].length - 1;
-        emit MessageAdded(msg.sender, index);
+        // Stores the message inside the user array
+        uint idx = u.messages.length;
+        u.messages.push(); // grow array by one
+        Message storage m = u.messages[idx];
+
+        // Allocate the storage array for the limbs
+        m.recipientEmail.limbs = new euint256[](limbs.length);
+
+        // Convert handles -> encrypted values (proof is checked here)
+        euint256[] storage stored = m.recipientEmail.limbs;
+        for (uint i = 0; i < limbs.length; ) {
+            stored[i] = FHE.fromExternal(limbs[i], inputProof);
+
+            FHE.allowThis(stored[i]);
+
+            unchecked {
+                ++i;
+            } // this skips overflow checks on the increment
+        }
+
+        euint128 storedShare = FHE.fromExternal(encSkShare, inputProof);
+        m.recipientEmail = EncryptedString({limbs: stored, byteLen: emailByteLen});
+        m._skShare = storedShare;
+        m.payload = payload;
+        m.createdAt = uint64(block.timestamp);
+
+        FHE.allowThis(m._skShare);
+
+        emit MessageAdded(msg.sender, idx);
+        return idx;
     }
 
     function messageCount(address user) external view returns (uint256) {
-        return _messages[user].length;
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "user not registered");
+        return u.messages.length;
     }
 
+    // --- Death and delivery ---
     function markDeceased(address user) external {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "user not registered");
@@ -142,31 +189,56 @@ contract Farewell is SepoliaConfig {
 
         // the sender who discovered that the user was deceased has priority to claim the message
         // during the next 24h
-        FHE.allow(u._skShare, msg.sender);
-        
-        u.notifier = Notifier({
-            notificationTime: uint64(block.timestamp),
-            notifierAddress: msg.sender
-        });
+        u.notifier = Notifier({notificationTime: uint64(block.timestamp), notifierAddress: msg.sender});
 
         emit Deceased(user, uint64(block.timestamp), u.notifier.notifierAddress);
     }
 
     /// @notice Anyone may trigger delivery after user is deceased.
     /// @dev Emits data+email; mark delivered to prevent duplicates.
-    function claim(address user, uint256 index) external view returns (euint128) {
+    function claim(address user, uint256 index) external {
         User storage u = users[user];
         require(u.deceased, "not deliverable");
 
+        address claimerAddress = msg.sender;
+
         // if within 24h of notification, only the notifier can claim
         if (block.timestamp <= uint256(u.notifier.notificationTime) + 24 hours) {
-            require(msg.sender == u.notifier.notifierAddress, "still exclusive for the notifier");
+            require(claimerAddress == u.notifier.notifierAddress, "still exclusive for the notifier");
         }
-        // I need to set this function as view but if I do that I break the test
-        // FHE.allow(u._skShare, msg.sender);
 
-        Message storage m = _messages[user][index];
-        // m.delivered = true;
-        return u._skShare;
+        Message storage m = u.messages[index];
+        m.claimed = true;
+        m.claimedBy = claimerAddress;
+
+        FHE.allow(m._skShare, claimerAddress);
+        for (uint i = 0; i < m.recipientEmail.limbs.length; ) {
+            FHE.allow(m.recipientEmail.limbs[i], claimerAddress);
+            unchecked {
+                ++i;
+            } // this skips overflow checks on the increment
+        }
+
+        emit Claimed(user, index, claimerAddress);
+    }
+
+    function retrieve(
+        address user,
+        uint256 index
+    )
+        external
+        view
+        returns (euint128 skShare, euint256[] memory encodedRecipientEmail, uint32 emailByteLen, bytes memory payload)
+    {
+        User storage u = users[user];
+        require(u.deceased, "not deliverable");
+        Message storage m = u.messages[index];
+        require(m.claimed, "not claimed");
+        require(m.claimedBy == msg.sender, "not claimed by this user");
+
+        skShare = m._skShare;
+        encodedRecipientEmail = m.recipientEmail.limbs;
+        emailByteLen = m.recipientEmail.byteLen;
+        payload = m.payload;
     }
 }
