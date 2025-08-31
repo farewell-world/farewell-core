@@ -90,7 +90,7 @@ describe("Farewell", function () {
 
   it("user should be able to add a message after registration", async function () {
     // Register
-    let tx = await FarewellContract.connect(signers.owner).registerDefault();
+    let tx = await FarewellContract.connect(signers.owner).register();
     await tx.wait();
 
     // We are going to use the same share for all messages

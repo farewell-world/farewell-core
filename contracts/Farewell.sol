@@ -39,8 +39,7 @@ contract Farewell is SepoliaConfig {
         uint64 createdAt;
         bool claimed;
         address claimedBy;
-        uint256 rcptCommit; // Poseidon(lower(email) || salt), computed off-chain when message is added
-        bytes32 salt; // public salt to recompute commitment inside circuit
+        string publicMessage;
     }
 
     struct User {
@@ -65,14 +64,6 @@ contract Farewell is SepoliaConfig {
     event Deceased(address indexed user, uint64 when, address indexed notifier);
 
     event MessageAdded(address indexed user, uint256 indexed index);
-    event MessageClaimed(
-        address indexed user,
-        uint256 indexed index,
-        bytes recipientEmail,
-        bytes data,
-        euint128 skShare
-    );
-
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
 
     // --- User lifecycle ---
@@ -97,7 +88,7 @@ contract Farewell is SepoliaConfig {
         _register(checkInPeriod, gracePeriod);
     }
 
-    function registerDefault() external {
+    function register() external {
         uint64 checkInPeriod = DEFAULT_CHECKIN;
         uint64 gracePeriod = DEFAULT_GRACE;
 
@@ -168,6 +159,60 @@ contract Farewell is SepoliaConfig {
         return idx;
     }
 
+    function addMessage(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage
+    ) external returns (uint256 index) {
+        // It is expected that payload is encrypted at the user side,
+        // otherwise it will be made public.
+        User storage u = users[msg.sender];
+
+        require(u.checkInPeriod > 0, "user not registered");
+        require(emailByteLen > 0, "email len=0");
+        require(limbs.length > 0, "no limbs");
+        require(payload.length > 0, "bad payload size");
+
+        // limbs count must match ceil(emailByteLen / 32)
+        uint256 expected = (uint256(emailByteLen) + 31) / 32;
+        require(limbs.length == expected, "limb count mismatch");
+
+        // Stores the message inside the user array
+        uint idx = u.messages.length;
+        u.messages.push(); // grow array by one
+        Message storage m = u.messages[idx];
+
+        // Allocate the storage array for the limbs
+        m.recipientEmail.limbs = new euint256[](limbs.length);
+
+        // Convert handles -> encrypted values (proof is checked here)
+        euint256[] storage stored = m.recipientEmail.limbs;
+        for (uint i = 0; i < limbs.length; ) {
+            stored[i] = FHE.fromExternal(limbs[i], inputProof);
+
+            FHE.allowThis(stored[i]);
+
+            unchecked {
+                ++i;
+            } // this skips overflow checks on the increment
+        }
+
+        euint128 storedShare = FHE.fromExternal(encSkShare, inputProof);
+        m.recipientEmail = EncryptedString({limbs: stored, byteLen: emailByteLen});
+        m._skShare = storedShare;
+        m.payload = payload;
+        m.createdAt = uint64(block.timestamp);
+        m.publicMessage = publicMessage;
+
+        FHE.allowThis(m._skShare);
+
+        emit MessageAdded(msg.sender, idx);
+        return idx;
+    }
+
     function messageCount(address user) external view returns (uint256) {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "user not registered");
@@ -228,7 +273,7 @@ contract Farewell is SepoliaConfig {
     )
         external
         view
-        returns (euint128 skShare, euint256[] memory encodedRecipientEmail, uint32 emailByteLen, bytes memory payload)
+        returns (euint128 skShare, euint256[] memory encodedRecipientEmail, uint32 emailByteLen, bytes memory payload, string memory publicMessage)
     {
         User storage u = users[user];
         require(u.deceased, "not deliverable");
@@ -240,5 +285,6 @@ contract Farewell is SepoliaConfig {
         encodedRecipientEmail = m.recipientEmail.limbs;
         emailByteLen = m.recipientEmail.byteLen;
         payload = m.payload;
+        publicMessage = m.publicMessage;
     }
 }
