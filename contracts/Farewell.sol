@@ -141,6 +141,7 @@ contract Farewell is SepoliaConfig {
             stored[i] = FHE.fromExternal(limbs[i], inputProof);
 
             FHE.allowThis(stored[i]);
+            FHE.allow(stored[i], msg.sender);
 
             unchecked {
                 ++i;
@@ -154,6 +155,7 @@ contract Farewell is SepoliaConfig {
         m.createdAt = uint64(block.timestamp);
 
         FHE.allowThis(m._skShare);
+        FHE.allow(m._skShare, msg.sender);
 
         emit MessageAdded(msg.sender, idx);
         return idx;
@@ -194,6 +196,7 @@ contract Farewell is SepoliaConfig {
             stored[i] = FHE.fromExternal(limbs[i], inputProof);
 
             FHE.allowThis(stored[i]);
+            FHE.allow(stored[i], msg.sender);
 
             unchecked {
                 ++i;
@@ -208,6 +211,7 @@ contract Farewell is SepoliaConfig {
         m.publicMessage = publicMessage;
 
         FHE.allowThis(m._skShare);
+        FHE.allow(m._skShare, msg.sender);
 
         emit MessageAdded(msg.sender, idx);
         return idx;
@@ -268,21 +272,35 @@ contract Farewell is SepoliaConfig {
     }
 
     function retrieve(
-        address user,
+        address owner,
         uint256 index
     )
         external
         view
-        returns (euint128 skShare, euint256[] memory encodedRecipientEmail, uint32 emailByteLen, bytes memory payload, string memory publicMessage)
+        returns (
+            euint128 skShare,
+            euint256[] memory encodedRecipientEmail,
+            uint32 emailByteLen,
+            bytes memory payload,
+            string memory publicMessage
+        )
     {
-        User storage u = users[user];
-        require(u.deceased, "not deliverable");
+        User storage u = users[owner];
+        require(index < u.messages.length, "invalid index");
+
         Message storage m = u.messages[index];
-        require(m.claimed, "not claimed");
-        require(m.claimedBy == msg.sender, "not claimed by this user");
+
+        bool isOwner = (msg.sender == owner);
+
+        if (!isOwner) {
+            // Only non-owners must satisfy delivery rules
+            require(u.deceased, "owner not deceased");
+            require(m.claimed, "message not claimed");
+            require(m.claimedBy == msg.sender, "not claimant");
+        }
 
         skShare = m._skShare;
-        encodedRecipientEmail = m.recipientEmail.limbs;
+        encodedRecipientEmail = m.recipientEmail.limbs; // copies to memory
         emailByteLen = m.recipientEmail.byteLen;
         payload = m.payload;
         publicMessage = m.publicMessage;
