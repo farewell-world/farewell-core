@@ -70,6 +70,10 @@ contract Farewell is SepoliaConfig {
     uint64 constant DEFAULT_CHECKIN = 30 days;
     uint64 constant DEFAULT_GRACE = 7 days;
 
+    function isRegistered(address user) external view returns (bool) {
+        return users[user].lastCheckIn != 0;
+    }
+
     function _register(uint64 checkInPeriod, uint64 gracePeriod) internal {
         User storage u = users[msg.sender];
         require(u.lastCheckIn == 0, "already registered");
