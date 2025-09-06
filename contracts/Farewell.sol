@@ -43,6 +43,7 @@ contract Farewell is SepoliaConfig {
     }
 
     struct User {
+        string name; // optional
         uint64 checkInPeriod; // seconds
         uint64 gracePeriod; // seconds
         uint64 lastCheckIn; // timestamp
@@ -70,14 +71,11 @@ contract Farewell is SepoliaConfig {
     uint64 constant DEFAULT_CHECKIN = 30 days;
     uint64 constant DEFAULT_GRACE = 7 days;
 
-    function isRegistered(address user) external view returns (bool) {
-        return users[user].lastCheckIn != 0;
-    }
-
-    function _register(uint64 checkInPeriod, uint64 gracePeriod) internal {
+    function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) internal {
         User storage u = users[msg.sender];
         require(u.lastCheckIn == 0, "already registered");
 
+        u.name = name;
         u.checkInPeriod = checkInPeriod;
         u.gracePeriod = gracePeriod;
         u.lastCheckIn = uint64(block.timestamp);
@@ -88,15 +86,50 @@ contract Farewell is SepoliaConfig {
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
-    function register(uint64 checkInPeriod, uint64 gracePeriod) external {
-        _register(checkInPeriod, gracePeriod);
-    }
-
     function register() external {
         uint64 checkInPeriod = DEFAULT_CHECKIN;
         uint64 gracePeriod = DEFAULT_GRACE;
 
-        _register(checkInPeriod, gracePeriod);
+        _register("", checkInPeriod, gracePeriod);
+    }
+
+    function register(uint64 checkInPeriod, uint64 gracePeriod) external {
+        _register("", checkInPeriod, gracePeriod);
+    }
+
+    function register(string memory name) external {
+        uint64 checkInPeriod = DEFAULT_CHECKIN;
+        uint64 gracePeriod = DEFAULT_GRACE;
+
+        _register(name, checkInPeriod, gracePeriod);
+    }
+
+    function register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) external {
+        _register(name, checkInPeriod, gracePeriod);
+    }
+
+    function isRegistered(address user) external view returns (bool) {
+        return users[user].lastCheckIn != 0;
+    }
+    function getUserName(address user) external view returns (string memory) {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "not registered");
+        return u.name;
+    }
+    function getRegisteredOn(address user) external view returns (uint64) {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "not registered");
+        return u.registeredOn;
+    }
+    function getLastCheckIn(address user) external view returns (uint64) {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "not registered");
+        return u.lastCheckIn;
+    }
+    function getDeceasedStatus(address user) external view returns (bool) {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "not registered");
+        return u.deceased;
     }
 
     function ping() external {
@@ -241,6 +274,22 @@ contract Farewell is SepoliaConfig {
         u.deceased = true;
 
         // the sender who discovered that the user was deceased has priority to claim the message
+        // during the next 24h
+        u.notifier = Notifier({notificationTime: uint64(block.timestamp), notifierAddress: msg.sender});
+
+        emit Deceased(user, uint64(block.timestamp), u.notifier.notifierAddress);
+    }
+
+    // FOR DEBUG ONLY!
+    function forceDeceased(address user) external {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "user not registered");
+        require(!u.deceased, "user already deceased");
+
+        // the user is considered from now on as deceased
+        u.deceased = true;
+
+        // the sender who marked the user as deceased has priority to claim the message
         // during the next 24h
         u.notifier = Notifier({notificationTime: uint64(block.timestamp), notifierAddress: msg.sender});
 
