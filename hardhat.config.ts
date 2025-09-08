@@ -8,9 +8,9 @@ import "hardhat-gas-reporter";
 import type { HardhatUserConfig } from "hardhat/config";
 import { vars } from "hardhat/config";
 import "solidity-coverage";
+import "@nomicfoundation/hardhat-toolbox"; // ethers v6 path
+import "@openzeppelin/hardhat-upgrades";
 
-// import "./tasks/accounts";
-// import "./tasks/FHECounter";
 
 // Run 'npx hardhat vars setup' to see the list of variables that need to be set
 
@@ -76,7 +76,7 @@ const config: HardhatUserConfig = {
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
-        runs: 800,
+        runs: 200,
       },
       viaIR: true, 
       evmVersion: "cancun",

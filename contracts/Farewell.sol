@@ -10,14 +10,19 @@ import {
     externalEuint128,
     externalEuint256
 } from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+
+// OZ upgradeable imports
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { SepoliaConfigUpgradeable } from "./fhevm/SepoliaConfigUpgradeable.sol";
 
 /// @title Farewell POC (email-recipient version)
 /// @notice Minimal on-chain PoC for posthumous message release via timeout.
 /// - Recipients are EMAILS (string), not wallet addresses.
 /// - Anyone can call `claim` after timeout; we emit an event with (email, data).
 /// - On-chain data is public. Treat `data` as ciphertext in real use.
-contract Farewell is SepoliaConfig {
+contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, SepoliaConfigUpgradeable {
     // Notifier is the entitiy that marked a user as deceased
     struct Notifier {
         uint64 notificationTime; // seconds
@@ -66,6 +71,20 @@ contract Farewell is SepoliaConfig {
 
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
+
+/// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    // REPLACES constructors & default constants wiring, sets initial owner
+    function initialize() public initializer {
+        __Ownable_init(msg.sender); // set initial owner (OZ v5 style)
+        __UUPSUpgradeable_init();
+        __SepoliaConfigUpgradeable_init();
+    }
+    // UUPS authorization hook
+    function _authorizeUpgrade(address newImpl) internal override onlyOwner {}
 
     // --- User lifecycle ---
     uint64 constant DEFAULT_CHECKIN = 30 days;
@@ -151,51 +170,7 @@ contract Farewell is SepoliaConfig {
         bytes calldata payload,
         bytes calldata inputProof
     ) external returns (uint256 index) {
-        // It is expected that payload is encrypted at the user side,
-        // otherwise it will be made public.
-        User storage u = users[msg.sender];
-
-        require(u.checkInPeriod > 0, "user not registered");
-        require(emailByteLen > 0, "email len=0");
-        require(limbs.length > 0, "no limbs");
-        require(payload.length > 0, "bad payload size");
-
-        // limbs count must match ceil(emailByteLen / 32)
-        uint256 expected = (uint256(emailByteLen) + 31) / 32;
-        require(limbs.length == expected, "limb count mismatch");
-
-        // Stores the message inside the user array
-        uint idx = u.messages.length;
-        u.messages.push(); // grow array by one
-        Message storage m = u.messages[idx];
-
-        // Allocate the storage array for the limbs
-        m.recipientEmail.limbs = new euint256[](limbs.length);
-
-        // Convert handles -> encrypted values (proof is checked here)
-        euint256[] storage stored = m.recipientEmail.limbs;
-        for (uint i = 0; i < limbs.length; ) {
-            stored[i] = FHE.fromExternal(limbs[i], inputProof);
-
-            FHE.allowThis(stored[i]);
-            FHE.allow(stored[i], msg.sender);
-
-            unchecked {
-                ++i;
-            } // this skips overflow checks on the increment
-        }
-
-        euint128 storedShare = FHE.fromExternal(encSkShare, inputProof);
-        m.recipientEmail = EncryptedString({limbs: stored, byteLen: emailByteLen});
-        m._skShare = storedShare;
-        m.payload = payload;
-        m.createdAt = uint64(block.timestamp);
-
-        FHE.allowThis(m._skShare);
-        FHE.allow(m._skShare, msg.sender);
-
-        emit MessageAdded(msg.sender, idx);
-        return idx;
+        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, "");
     }
 
     function addMessage(
@@ -206,52 +181,53 @@ contract Farewell is SepoliaConfig {
         bytes calldata inputProof,
         string calldata publicMessage
     ) external returns (uint256 index) {
-        // It is expected that payload is encrypted at the user side,
-        // otherwise it will be made public.
-        User storage u = users[msg.sender];
+        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
+    }
 
+    function _addMessage(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string memory publicMessage
+    ) internal returns (uint256 index) {
+        User storage u = users[msg.sender];
         require(u.checkInPeriod > 0, "user not registered");
         require(emailByteLen > 0, "email len=0");
         require(limbs.length > 0, "no limbs");
         require(payload.length > 0, "bad payload size");
+        require(limbs.length == (uint256(emailByteLen) + 31) / 32, "limb count mismatch");
 
-        // limbs count must match ceil(emailByteLen / 32)
-        uint256 expected = (uint256(emailByteLen) + 31) / 32;
-        require(limbs.length == expected, "limb count mismatch");
+        index = u.messages.length;
+        u.messages.push();
+        Message storage m = u.messages[index];
 
-        // Stores the message inside the user array
-        uint idx = u.messages.length;
-        u.messages.push(); // grow array by one
-        Message storage m = u.messages[idx];
-
-        // Allocate the storage array for the limbs
+        // allocate and fill limbs directly, avoid extra locals
         m.recipientEmail.limbs = new euint256[](limbs.length);
-
-        // Convert handles -> encrypted values (proof is checked here)
-        euint256[] storage stored = m.recipientEmail.limbs;
         for (uint i = 0; i < limbs.length; ) {
-            stored[i] = FHE.fromExternal(limbs[i], inputProof);
-
-            FHE.allowThis(stored[i]);
-            FHE.allow(stored[i], msg.sender);
-
+            euint256 v = FHE.fromExternal(limbs[i], inputProof);
+            m.recipientEmail.limbs[i] = v;
+            FHE.allowThis(v);
+            FHE.allow(v, msg.sender);
             unchecked {
                 ++i;
-            } // this skips overflow checks on the increment
+            }
         }
+        m.recipientEmail.byteLen = emailByteLen;
 
-        euint128 storedShare = FHE.fromExternal(encSkShare, inputProof);
-        m.recipientEmail = EncryptedString({limbs: stored, byteLen: emailByteLen});
-        m._skShare = storedShare;
-        m.payload = payload;
-        m.createdAt = uint64(block.timestamp);
-        m.publicMessage = publicMessage;
-
+        // assign directly, no temp var
+        m._skShare = FHE.fromExternal(encSkShare, inputProof);
         FHE.allowThis(m._skShare);
         FHE.allow(m._skShare, msg.sender);
 
-        emit MessageAdded(msg.sender, idx);
-        return idx;
+        m.payload = payload;
+        m.createdAt = uint64(block.timestamp);
+        if (bytes(publicMessage).length != 0) {
+            m.publicMessage = publicMessage;
+        }
+
+        emit MessageAdded(msg.sender, index);
     }
 
     function messageCount(address user) external view returns (uint256) {
