@@ -1,86 +1,103 @@
 # Farewell       
-<p align="center"> <img src="assets/logo.png" alt="Farewell Logo" width="600"/> </p>
+<p align="center"> <img src="assets/farewell-logo.png" alt="Farewell Logo" width="600"/> </p>
 
-**Farewell** is a proof-of-concept decentralized application (dApp) that allows people to leave **posthumous encrypted messages** to their loved ones.  
-It uses **smart contracts** on top of the [fhevm](https://github.com/zama-ai/fhevm) to securely store encrypted data, enforce liveness checks, and release messages only after a configurable timeout.
+**Farewell** is a decentralized application (dApp) that allows people to leave **posthumous encrypted messages** to their loved ones.  
+It uses **smart contracts** built on top of the [fhevm](https://github.com/zama-ai/fhevm) to securely store encrypted data, enforce liveness checks, and release messages only after a configurable timeout.
 
-Because it is deployed as a smart contract on a blockchain (such as Ethereum), **Farewell inherits the reliability and persistence of decentralized infrastructure**. This means the system is designed so that it will keep functioning for decades without depending on a single server or authority, and messages cannot be lost or tampered with once stored.
+Because it is deployed as a smart contract on Ethereum, **Farewell inherits the reliability and persistence of decentralized infrastructure**. This means the system is designed so that it will keep functioning for decades without depending on a single server or authority, and messages cannot be lost or tampered with once stored.
+
+We have a **live demo** as [proof of concept](https://www.iampedro.com/farewell) running on Sepolia.
 
 ---
 
 ## ✨ Features
 
 - **Check-in mechanism**:  
-    Each user sets a `checkInPeriod` (e.g. 6 months) and must periodically call `checkIn()` to prove they are still alive.
+    Each user sets a `checkInPeriod` (e.g., 6 months) and must periodically call `ping()` to prove liveness.
     
 - **Grace period**:  
-    After `checkInPeriod` expires, a `gracePeriod` allows for unexpected delays before being marked deceased.
+    After the `checkInPeriod` expires, a `gracePeriod` allows for unexpected delays before a user is marked deceased. During this period, a selected **council** can intervene, either by ensuring liveness (equivalent to a `ping()` call) or by asserting death. After this period, if no council action is received, the user is assumed to have passed away and can be marked as deceased.
     
 - **Deceased flagging**:  
     If the user does not check in during both periods, anyone may call `markDeceased()` to change the user’s status.
     
 - **Encrypted messages**:  
-    Users can upload encrypted messages with associated recipients. Messages contain:
+    Users can upload encrypted messages with associated recipients.  Messages contain:
     
-    - Encrypted recipient’s email (string treated as an array of euint)
-        
     - Encrypted message data (treated as locally-encrypted ciphertext)
+
+    - Encrypted recipient’s email (stored as an `euint`, remaining hidden until revealed)
         
-    - A private share of the user’s decryption key (kept as an `euint` so it remains hidden until revealed)
+    - A private share of the user’s decryption key (also stored as an `euint`)
         
 - **Delivery mechanism**:  
     After the user is flagged as deceased:
     
-    - Anyone may call `claim()` to mark a message as ready for release.
+    - Anyone may call `claim()` to mark a message as ready for release. The address that initially marked the user as deceased has a 24-hour priority window for claiming a message.
         
     - Recipients (or external services) can then call `retrieve()` (view) to obtain a **DeliveryPackage** containing:
         
-        - Recipient’s email
+        - Recipient’s email address
             
-        - Ciphertext with the message
+        - The (hopefully) encrypted message
             
-        - Key share
+        - The key share
             
 - **Blockchain persistence**:  
-    By running entirely as a smart contract on a blockchain such as Ethereum, **Farewell ensures that the system continues to operate reliably for decades**, independent of any central operator, and that **no messages can be lost once stored**.
+    Running entirely as a smart contract on Ethereum (or other similar chains in the future), **Farewell ensures the system operates reliably for decades** without reliance on a central operator, and that **messages cannot be lost once stored**.
     
+
+---
+
+## 🔒 Securing messages
+
+Messages are stored on the blockchain, so it is **strongly recommended** that they be locally encrypted before submission. If submitted in cleartext, they become immediately publicly visible. 
+
+The recipient contact, on the other hard, is stored in fhEVM and thus requires no additional protection. The Zama Protocol will ensure it stays private until the message is released, and only becomes visible to those authorized to deliver it. The same applies for the secret key share.
+
+This design ensures that the system is **fully private** while still revealing the necessary information to deliver messages at the right time.
+
+---
+
+## 🔑 The share of the secret key
+
+Since the message must be encrypted client-side, the recipient needs a mechanism to enable decryption after the user is deceased. This mechanism is the **secret key share**.
+
+While alive, the user may choose to share the decryption key directly with the recipient, making them aware of the secure payload to be recovered after death. In that case, the secret key share would be empty, and the recipient would hold the full key.
+
+This approach, however, may draw unwanted attention. Because the payload is stored on-chain, a recipient who already has the full key could retrieve and decrypt it prematurely.
+
+An alternative would be to store the entire decryption key as the “share.” This requires no interaction with the recipient and prevents **anyone** from decrypting the message beforehand. However, once released, **any retriever** could decrypt it, including unintended parties, which creates a privacy risk.
+
+Our recommendation is a middle ground. 
+
+Suppose the user encrypts their message using AES-128. Let `sk` be the AES secret key, and `s` a randomly sampled 128-bit integer. The user computes:
+
+`s' = sk ⊕ s`,
+
+then stores `s` as the secret key share in fhEVM, and shares `s'` with the recipient.
+
+When the time comes, Farewell releases `enc_sk(m)` (the encryption of message `m` under `sk`) and `s'`. The recipient computes `sk = s ⊕ s'` and then decrypts the ciphertext.
+
+This guarantees the recipient cannot decrypt the message before the time, and that only they will be able to do so.
 
 ---
 
 ## ⚠️ Notes & Limitations
 
-- All **data must be encrypted client-side** before being stored on-chain.  
-    We recommend using [GPG](https://gnupg.org/) for encryption.
+- The message **must be encrypted client-side** before being stored on-chain. We recommend [GPG](https://gnupg.org/) for encryption.
     
-- To **save gas costs**, messages should be **compacted** before submission (e.g., archive + compress with `tar` and `gzip`).
+- To **save gas costs**, messages should be **compacted** before submission (e.g., archived and compressed with `tar` + `gzip`).
     
 - On-chain data is **public**.
     
-    - The submitted message is visible, that's why they are are meant to be pre-encrypted client-side.
+    - Submitted messages are publicly visible. This is why they must be pre-encrypted client-side.
         
-    - Key shares are stored as **encrypted integers (`euint`)**, which remain hidden until released.
+    - Key shares are stored as **encrypted integers (`euint`)**, remaining hidden until released.
         
 - This is a **Proof-of-Concept** only.  
-    Not production-ready, no guarantees of security, privacy, or delivery.
+    Not production-ready; there are no guarantees of security, privacy, or delivery.
     
-
----
-
-## 📂 Project Structure
-
-```
-farewell/  
-├── assets/
-│   └── logo.png       
-├── contracts/  
-│   └── Farewell.sol       # Core smart contract  
-├── test/  
-│   └── Farewell.t.js      # Hardhat tests  
-├── hardhat.config.ts      # Hardhat setup  
-├── package.json  
-└── README.md              # This file
-```
-
 ---
 
 ## 🚀 Usage
@@ -101,7 +118,6 @@ In Hardhat console:
 npx hardhat console --network <network>
 ```
 
-
 ---
 
 ## 🔐 Workflow
@@ -110,17 +126,15 @@ npx hardhat console --network <network>
 
 - Defines `checkInPeriod` + `gracePeriod`
     
-- Stores encrypted key share
-    
 
 ### 2. User adds messages
 
-- Each message contains recipient email and ciphertext
+- Each message contains recipient email, encrypted message, and the secret key share
     
 
 ### 3. User stays alive
 
-- Calls `checkIn()` periodically
+- Calls `ping()` periodically
     
 
 ### 4. Timeout occurs
@@ -130,7 +144,7 @@ npx hardhat console --network <network>
 
 ### 5. Messages are claimed and retrieved
 
-- `claim()` marks the message as ready
+- `claim()` marks the message as ready and temporary enables the caller to retrieve it
     
 - `retrieve()` (view) returns a **DeliveryPackage**:  
     `(recipientEmail, ciphertext, keyShare)`
@@ -142,52 +156,7 @@ npx hardhat console --network <network>
 
 ## 📊 Sequence Diagrams
 
-### Register & Add Message
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant SC as Farewell Contract
-    participant BC as Blockchain
-
-    U->>SC: register(checkInPeriod, gracePeriod, keyShare)
-    SC->>BC: Store UserConfig
-    U->>SC: addMessage(email, ciphertext)
-    SC->>BC: Store Message metadata
-```
-
----
-
-### Check-in Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant SC as Farewell Contract
-    participant BC as Blockchain
-
-    U->>SC: checkIn()
-    SC->>BC: Update lastCheckIn timestamp
-```
-
----
-
-### Mark as Deceased & Delivery
-
-```mermaid
-sequenceDiagram
-    participant A as Anyone
-    participant SC as Farewell Contract
-    participant R as Recipient
-
-    A->>SC: markDeceased(user)
-    A->>SC: claim(messageId)
-    R->>SC: retrieve(messageId)
-    SC-->>R: DeliveryPackage (recipientEmail, ciphertext, keyShare)
-
-    R->>OffChain: Listen to events
-    OffChain->>R: Deliver decrypted message
-```
+🚧 todo 🚧
 
 ---
 
@@ -235,28 +204,19 @@ gpg --decrypt message.txt.gpg
 
 ---
 
-### 🔑 Obtaining the Secret Key Share
+## 🔮 Future work
 
-_(todo: add detailed explanation of how to export and provide the encrypted share for the contract)_
-
----
-
-## 🔮 Future Extensions
-
-Farewell can be extended with **zero-knowledge proofs (ZKPs)** to add stronger guarantees of delivery:
+Farewell is **not** feature complete. It needs:
 
 - **Proof of email delivery**:  
-    By integrating [zk.email](https://docs.zk.email/architecture/on-chain), a recipient (or service) could prove on-chain that the encrypted message was actually submitted to an email provider.  
-    This would allow `claim()` not only to release a DeliveryPackage, but also to **reward the claimer** once they provide a valid delivery proof.
+    By integrating [zk.email](https://docs.zk.email/architecture/on-chain), the message retriever could prove on-chain that the encrypted message was actually submitted to the intended recipient. 
+    This would allow `retrieve()` not only to release a DeliveryPackage but also to **reward the claimer** once they provide a valid delivery proof.
     
-- **Privacy-preserving claims**:  
-    ZKPs could allow recipients to prove ownership of an email (or account) without revealing it on-chain, enhancing privacy.
+- **Council logic**:
+    A council could be set up to intervene in case of unexpected delays during the grace period. The user would define this council at registration via wallet addresses.  Council members could act when the check-in period expires, either to ensure the user is alive or to confirm death and enable message retrieval.
     
-- **Incentive mechanisms**:  
-    Rewards could be tied to proofs, ensuring that only successful delivery attempts are compensated.
-    
-
-This functionality is **not implemented yet**, but is a natural evolution of the Farewell project.
+- **Edit messages**:
+    Users may change their minds (while still alive). Farewell should support withdrawing or editing messages.
 
 ---
 
