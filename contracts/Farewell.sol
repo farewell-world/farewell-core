@@ -81,7 +81,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Sepolia
     function initialize() public initializer {
         __Ownable_init(msg.sender); // set initial owner (OZ v5 style)
         __UUPSUpgradeable_init();
-        __SepoliaConfigUpgradeable_init();
+        __SepoliaConfig_init();
     }
     // UUPS authorization hook
     function _authorizeUpgrade(address newImpl) internal override onlyOwner {}
