@@ -15,7 +15,7 @@ import {
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import { SepoliaConfigUpgradeable } from "./fhevm/SepoliaConfigUpgradeable.sol";
+import {SepoliaConfigUpgradeable} from "./fhevm/SepoliaConfigUpgradeable.sol";
 
 /// @title Farewell POC (email-recipient version)
 /// @notice Minimal on-chain PoC for posthumous message release via timeout.
@@ -65,6 +65,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Sepolia
     // Events
     // -----------------------
 
+    event UserUpdated(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
     event UserRegistered(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
     event Ping(address indexed user, uint64 when);
     event Deceased(address indexed user, uint64 when, address indexed notifier);
@@ -72,7 +73,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Sepolia
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
 
-/// @custom:oz-upgrades-unsafe-allow constructor
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
@@ -92,16 +93,23 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Sepolia
 
     function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) internal {
         User storage u = users[msg.sender];
-        require(u.lastCheckIn == 0, "already registered");
 
-        u.name = name;
-        u.checkInPeriod = checkInPeriod;
-        u.gracePeriod = gracePeriod;
-        u.lastCheckIn = uint64(block.timestamp);
-        u.registeredOn = uint64(block.timestamp);
-        u.deceased = false;
+        if (u.lastCheckIn != 0) {
+            // user is already registered, update configs
+            u.checkInPeriod = checkInPeriod;
+            u.gracePeriod = gracePeriod;
+            emit UserUpdated(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
+        } else {
+            // new user
+            u.name = name;
+            u.checkInPeriod = checkInPeriod;
+            u.gracePeriod = gracePeriod;
+            u.lastCheckIn = uint64(block.timestamp);
+            u.registeredOn = uint64(block.timestamp);
+            u.deceased = false;
+            emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
+        }
 
-        emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
