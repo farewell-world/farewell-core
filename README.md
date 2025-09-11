@@ -230,13 +230,15 @@ Several design questions remain open to reach this level of security:
 
 ### On-chain secrecy without external protocols
 Is it possible to store and release encrypted key shares purely on-chain (without depending on Zama Protocol or external coprocessors) while keeping data secret until release?
-👉 [Discussion on GitHub](https://github.com/pdroalves/farewell-core/issues/1)
+
+👉 [Discussion on GitHub](https://github.com/pdroalves/farewell-core/issues/2)
 
 ### Reliable delivery protocol
 How can we define a delivery protocol that is:
 	•	Friendly to delivery proofs (e.g., zk.email-style attestations)
 	•	Potentially better than emails in terms of reliability, privacy, and censorship resistance
-👉 Discussion on GitHub
+
+👉 [Discussion on GitHub](https://github.com/pdroalves/farewell-core/issues/1)
 
 Community input and experimentation are welcome.
 
