@@ -244,6 +244,18 @@ Community input and experimentation are welcome.
 
 ---
 
+## ☕ Buy Me a Coffee (on-chain)
+
+If you like this project and want to keep me caffeinated enough to keep coding,  
+you can send a tiny tip (or a whole espresso shot) here:
+
+**`0x6DB81c37e192f19197430ad027916495542B04bd`**
+
+Think of it as fueling the project — one coffee at a time.  
+(Warning: higher doses of caffeine may result in unexpected features 😅)
+
+---
+
 ## 📜 License
 
 MIT
