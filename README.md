@@ -230,7 +230,7 @@ Several design questions remain open to reach this level of security:
 
 ### On-chain secrecy without external protocols
 Is it possible to store and release encrypted key shares purely on-chain (without depending on Zama Protocol or external coprocessors) while keeping data secret until release?
-👉 Discussion on GitHub
+👉 [Discussion on GitHub](https://github.com/pdroalves/farewell-core/issues/1)
 
 ### Reliable delivery protocol
 How can we define a delivery protocol that is:
