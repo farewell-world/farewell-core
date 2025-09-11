@@ -216,7 +216,29 @@ Farewell is **not** feature complete. It needs:
     A council could be set up to intervene in case of unexpected delays during the grace period. The user would define this council at registration via wallet addresses.  Council members could act when the check-in period expires, either to ensure the user is alive or to confirm death and enable message retrieval.
     
 - **Edit messages**:
-    Users may change their minds (while still alive). Farewell should support withdrawing or editing messages.
+    Users may change their minds (while still alive). Farewell should support withdrawing or editing Perfect — here’s the revised Open Issues section with a clear definition of secure and GitHub issue links you can point to (I’ll use placeholders you can replace with real issue numbers or URLs):
+
+---
+
+## 🧩 Open Issues
+
+In the context of Farewell, secure means:
+	•	The message remains unreadable until the user’s death.
+	•	Once released, only the intended recipient can decrypt and read it.
+
+Several design questions remain open to reach this level of security:
+
+### On-chain secrecy without external protocols
+Is it possible to store and release encrypted key shares purely on-chain (without depending on Zama Protocol or external coprocessors) while keeping data secret until release?
+👉 Discussion on GitHub
+
+### Reliable delivery protocol
+How can we define a delivery protocol that is:
+	•	Friendly to delivery proofs (e.g., zk.email-style attestations)
+	•	Potentially better than emails in terms of reliability, privacy, and censorship resistance
+👉 Discussion on GitHub
+
+Community input and experimentation are welcome.
 
 ---
 
