@@ -100,5 +100,13 @@
     "axios@<0.29.1": ">=0.29.1",
     "cookie@<0.7.0": ">=0.7.0",
     "minimatch": "^3.1.2"
+  },
+  "main": ".solcover.js",
+  "directories": {
+    "test": "test"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/zama-ai/fhevm-hardhat-template/issues"
   }
 }
