@@ -128,11 +128,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable,
     emit Ping(msg.sender, u.lastCheckIn);
   }
 
-  function register() external {
-    uint64 checkInPeriod = DEFAULT_CHECKIN;
-    uint64 gracePeriod = DEFAULT_GRACE;
-
-    _register("", checkInPeriod, gracePeriod);
+  function register(string memory name, uint64 checkInPeriod,
+                    uint64 gracePeriod) external {
+    _register(name, checkInPeriod, gracePeriod);
   }
 
   function register(uint64 checkInPeriod, uint64 gracePeriod) external {
@@ -146,9 +144,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable,
     _register(name, checkInPeriod, gracePeriod);
   }
 
-  function register(string memory name, uint64 checkInPeriod,
-                    uint64 gracePeriod) external {
-    _register(name, checkInPeriod, gracePeriod);
+  function register() external {
+    uint64 checkInPeriod = DEFAULT_CHECKIN;
+    uint64 gracePeriod = DEFAULT_GRACE;
+
+    _register("", checkInPeriod, gracePeriod);
   }
 
   function isRegistered(address user) external view returns(bool) {
@@ -195,22 +195,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable,
 
   // --- Messages ---
 
-  function addMessage(externalEuint256[] calldata limbs, uint32 emailByteLen,
-                      externalEuint128 encSkShare, bytes calldata payload,
-                      bytes calldata inputProof)
-      external returns(uint256 index) {
-    return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof,
-                       "");
-  }
-
-  function addMessage(externalEuint256[] calldata limbs, uint32 emailByteLen,
-                      externalEuint128 encSkShare, bytes calldata payload,
-                      bytes calldata inputProof, string calldata publicMessage)
-      external returns(uint256 index) {
-    return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof,
-                       publicMessage);
-  }
-
   function _addMessage(externalEuint256[] calldata limbs, uint32 emailByteLen,
                        externalEuint128 encSkShare, bytes calldata payload,
                        bytes calldata inputProof, string memory publicMessage)
@@ -250,6 +234,22 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable,
     }
     totalMessages++;
     emit MessageAdded(msg.sender, index);
+  }
+
+  function addMessage(externalEuint256[] calldata limbs, uint32 emailByteLen,
+                      externalEuint128 encSkShare, bytes calldata payload,
+                      bytes calldata inputProof)
+      external returns(uint256 index) {
+    return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof,
+                       "");
+  }
+
+  function addMessage(externalEuint256[] calldata limbs, uint32 emailByteLen,
+                      externalEuint128 encSkShare, bytes calldata payload,
+                      bytes calldata inputProof, string calldata publicMessage)
+      external returns(uint256 index) {
+    return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof,
+                       publicMessage);
   }
 
   function messageCount(address user) external view returns(uint256) {

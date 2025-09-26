@@ -4,6 +4,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { toUtf8Bytes } from "ethers";
 import { ethers, fhevm } from "hardhat";
+import { upgrades } from "hardhat";
 
 type Signers = {
   owner: HardhatEthersSigner;
@@ -12,12 +13,19 @@ type Signers = {
 };
 
 async function deployFixture() {
-  const factory = (await ethers.getContractFactory("Farewell")) as Farewell__factory;
-  const FarewellContract = (await factory.deploy()) as Farewell;
-  const FarewellContractAddress = await FarewellContract.getAddress();
+  const FarewellFactory = await ethers.getContractFactory("Farewell");
+  // Deploy UUPS proxy and run initialize()
+  const proxy = await upgrades.deployProxy(FarewellFactory, [], {
+    kind: "uups",
+    initializer: "initialize",
+  });
+  await proxy.waitForDeployment();
 
+  const FarewellContract = proxy as unknown as Farewell;
+  const FarewellContractAddress = await FarewellContract.getAddress();
   return { FarewellContract, FarewellContractAddress };
 }
+
 
 // --- helpers ---
 const toBytes = (s: string) => ethers.toUtf8Bytes(s);
@@ -89,9 +97,15 @@ describe("Farewell", function () {
   });
 
   it("user should be able to add a message after registration", async function () {
+    let isRegistered = await FarewellContract.connect(signers.owner).isRegistered(signers.owner.address);
+    expect(isRegistered).to.eq(false);
+
     // Register
     let tx = await FarewellContract.connect(signers.owner).register();
     await tx.wait();
+
+    isRegistered = await FarewellContract.connect(signers.owner).isRegistered(signers.owner.address);
+    expect(isRegistered).to.eq(true);
 
     // We are going to use the same share for all messages
     // Add a message
@@ -106,13 +120,12 @@ describe("Farewell", function () {
       const nLimbs = emailWords1.length;
       const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
       const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
-
       tx = await FarewellContract.connect(signers.owner).addMessage(
         limbsHandles,
         emailBytes1.length, // emailByteLen
         skShareHandle, // encSkShare (externalEuint128)
         payloadBytes1, // public payload
-        encrypted.inputProof,
+        encrypted.inputProof
       );
       await tx.wait();
 
@@ -150,7 +163,7 @@ describe("Farewell", function () {
     // Register
     const checkInPeriod = 1;
     const gracePeriod = 1;
-    let tx = await FarewellContract.connect(signers.owner).register(checkInPeriod, gracePeriod);
+    let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
     await tx.wait();
 
     // We are going to use the same share for all messages
