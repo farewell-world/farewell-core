@@ -282,4 +282,280 @@ describe("Farewell", function () {
     expect(recoveredEmail).to.equal(email1);
     expect(ethers.toUtf8String(encryptedClaimedMessage.payload)).to.equal(payload1);
   });
+
+  describe("setName", function () {
+    it("should allow a registered user to set and update their name", async function () {
+      // Register without name
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Name should be empty initially
+      let name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("");
+
+      // Set name
+      tx = await FarewellContract.connect(signers.owner).setName("Alice");
+      await tx.wait();
+
+      name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("Alice");
+
+      // Update name
+      tx = await FarewellContract.connect(signers.owner).setName("Bob");
+      await tx.wait();
+
+      name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("Bob");
+    });
+
+    it("should allow registration with name", async function () {
+      // Register with name
+      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Charlie",
+        86400n, // 1 day check-in
+        3600n   // 1 hour grace
+      );
+      await tx.wait();
+
+      const name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("Charlie");
+    });
+
+    it("should revert if user is not registered", async function () {
+      await expect(
+        FarewellContract.connect(signers.owner).setName("Test")
+      ).to.be.revertedWith("not registered");
+    });
+  });
+
+  describe("removeMessage", function () {
+    it("should allow owner to remove their own unclaimed message", async function () {
+      // Register
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add a message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = emailWords1.length;
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        limbsHandles,
+        emailBytes1.length,
+        skShareHandle,
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      let n = await FarewellContract.messageCount(signers.owner.address);
+      expect(n).to.eq(1);
+
+      // Remove the message
+      tx = await FarewellContract.connect(signers.owner).removeMessage(0);
+      await tx.wait();
+
+      // Message count should still be 1 (message is marked as deleted, not removed)
+      n = await FarewellContract.messageCount(signers.owner.address);
+      expect(n).to.eq(1);
+
+      // Trying to retrieve should fail
+      await expect(
+        FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0)
+      ).to.be.revertedWith("message was deleted");
+    });
+
+    it("should not allow removing an already deleted message", async function () {
+      // Register
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add a message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = emailWords1.length;
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        limbsHandles,
+        emailBytes1.length,
+        skShareHandle,
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Remove the message
+      tx = await FarewellContract.connect(signers.owner).removeMessage(0);
+      await tx.wait();
+
+      // Try to remove again
+      await expect(
+        FarewellContract.connect(signers.owner).removeMessage(0)
+      ).to.be.revertedWith("already deleted");
+    });
+
+    it("should not allow removing a claimed message", async function () {
+      // Register with short periods
+      const checkInPeriod = 1;
+      const gracePeriod = 1;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add a message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = emailWords1.length;
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        limbsHandles,
+        emailBytes1.length,
+        skShareHandle,
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Advance time and mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Claim the message
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Try to remove the claimed message (should fail)
+      await expect(
+        FarewellContract.connect(signers.owner).removeMessage(0)
+      ).to.be.revertedWith("cannot delete claimed message");
+    });
+
+    it("should not allow non-owner to remove message", async function () {
+      // Register
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add a message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = emailWords1.length;
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        limbsHandles,
+        emailBytes1.length,
+        skShareHandle,
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Alice tries to remove owner's message
+      await expect(
+        FarewellContract.connect(signers.alice).removeMessage(0)
+      ).to.be.revertedWith("not registered");
+    });
+
+    it("should preserve message indices after deletion", async function () {
+      // Register
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add message 0
+      {
+        const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+        for (const w of emailWords1) enc.add256(w);
+        enc.add128(skShare);
+        const encrypted = await enc.encrypt();
+        const nLimbs = emailWords1.length;
+        tx = await FarewellContract.connect(signers.owner).addMessage(
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes1.length,
+          encrypted.handles[nLimbs],
+          payloadBytes1,
+          encrypted.inputProof
+        );
+        await tx.wait();
+      }
+
+      // Add message 1
+      {
+        const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+        for (const w of emailWords2) enc.add256(w);
+        enc.add128(skShare);
+        const encrypted = await enc.encrypt();
+        const nLimbs = emailWords2.length;
+        tx = await FarewellContract.connect(signers.owner).addMessage(
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes2.length,
+          encrypted.handles[nLimbs],
+          payloadBytes2,
+          encrypted.inputProof
+        );
+        await tx.wait();
+      }
+
+      // Add message 2
+      {
+        const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+        for (const w of emailWords1) enc.add256(w);
+        enc.add128(skShare);
+        const encrypted = await enc.encrypt();
+        const nLimbs = emailWords1.length;
+        tx = await FarewellContract.connect(signers.owner).addMessage(
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes1.length,
+          encrypted.handles[nLimbs],
+          payloadBytes1,
+          encrypted.inputProof
+        );
+        await tx.wait();
+      }
+
+      let n = await FarewellContract.messageCount(signers.owner.address);
+      expect(n).to.eq(3);
+
+      // Remove message 1 (middle one)
+      tx = await FarewellContract.connect(signers.owner).removeMessage(1);
+      await tx.wait();
+
+      // Message count should still be 3
+      n = await FarewellContract.messageCount(signers.owner.address);
+      expect(n).to.eq(3);
+
+      // Message 0 should still be accessible
+      const msg0 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      expect(ethers.toUtf8String(msg0.payload)).to.equal(payload1);
+
+      // Message 1 should be deleted
+      await expect(
+        FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 1)
+      ).to.be.revertedWith("message was deleted");
+
+      // Message 2 should still be accessible
+      const msg2 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 2);
+      expect(ethers.toUtf8String(msg2.payload)).to.equal(payload1);
+    });
+  });
 });
