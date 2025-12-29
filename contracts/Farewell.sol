@@ -37,6 +37,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         bool claimed;
         address claimedBy;
         string publicMessage;
+        bool deleted; // true if message was deleted by owner
     }
 
     struct User {
@@ -68,6 +69,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
+    event MessageDeleted(address indexed user, uint256 indexed index);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -337,6 +339,40 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         emit Claimed(user, index, claimerAddress);
     }
 
+    /// @notice Remove a message by XORing encrypted content with random data
+    /// @dev Message ID is preserved - the message is marked as deleted but not removed from array
+    /// @param index The index of the message to remove
+    function removeMessage(uint256 index) external {
+        User storage u = users[msg.sender];
+        require(u.checkInPeriod > 0, "not registered");
+        require(index < u.messages.length, "invalid index");
+
+        Message storage m = u.messages[index];
+        require(!m.deleted, "already deleted");
+        require(!m.claimed, "cannot delete claimed message");
+
+        // XOR encrypted key share with random data to destroy content
+        euint128 randSkShare = FHE.randEuint128();
+        m._skShare = FHE.xor(m._skShare, randSkShare);
+
+        // XOR each email limb with random data
+        for (uint i = 0; i < m.recipientEmail.limbs.length;) {
+            euint256 randLimb = FHE.randEuint256();
+            m.recipientEmail.limbs[i] = FHE.xor(m.recipientEmail.limbs[i], randLimb);
+            unchecked { ++i; }
+        }
+
+        // Clear unencrypted data
+        delete m.payload;
+        delete m.publicMessage;
+        m.recipientEmail.byteLen = 0;
+
+        // Mark as deleted
+        m.deleted = true;
+
+        emit MessageDeleted(msg.sender, index);
+    }
+
     function retrieve(address owner, uint256 index) external view returns (
         euint128 skShare,
         euint256[] memory encodedRecipientEmail,
@@ -348,6 +384,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         require(index < u.messages.length, "invalid index");
 
         Message storage m = u.messages[index];
+        require(!m.deleted, "message was deleted");
 
         bool isOwner = (msg.sender == owner);
 
