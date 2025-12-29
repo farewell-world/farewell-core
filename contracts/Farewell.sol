@@ -154,6 +154,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         return u.name;
     }
 
+    /// @notice Update the user's display name
+    function setName(string memory newName) external {
+        User storage u = users[msg.sender];
+        require(u.checkInPeriod > 0, "not registered");
+        u.name = newName;
+        emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
+    }
+
     function getRegisteredOn(address user) external view returns (uint64) {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "not registered");
