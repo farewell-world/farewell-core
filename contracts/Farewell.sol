@@ -37,7 +37,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         bool claimed;
         address claimedBy;
         string publicMessage;
-        bool deleted; // true if message was deleted by owner
+        bytes32 hash;  // Hash of all input attributes
     }
 
     struct User {
@@ -54,6 +54,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     mapping(address => User) public users;
 
+    // Mapping to track message hashes for efficient lookup
+    mapping(bytes32 => bool) public messageHashes;
+
     // Solidity automatically initializes all storage variables to zero by default.
     uint64 private totalUsers;
     uint64 private totalMessages;
@@ -69,7 +72,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
-    event MessageDeleted(address indexed user, uint256 indexed index);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -242,6 +244,18 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         if (bytes(publicMessage).length != 0) {
             m.publicMessage = publicMessage;
         }
+
+        // Compute hash of all input attributes
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            limbs,
+            emailByteLen,
+            encSkShare,
+            payload,
+            publicMessage
+        ));
+        m.hash = messageHash;
+        messageHashes[messageHash] = true;  // Track hash for lookup
+
         totalMessages++;
         emit MessageAdded(msg.sender, index);
     }
@@ -271,6 +285,24 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "user not registered");
         return u.messages.length;
+    }
+
+    /// @notice Compute the hash of message inputs without adding the message
+    /// @dev Useful for checking if a message with these inputs already exists
+    function computeMessageHash(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        string calldata publicMessage
+    ) external pure returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            limbs,
+            emailByteLen,
+            encSkShare,
+            payload,
+            publicMessage
+        ));
     }
 
     // --- Death and delivery ---
@@ -339,52 +371,18 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         emit Claimed(user, index, claimerAddress);
     }
 
-    /// @notice Remove a message by XORing encrypted content with random data
-    /// @dev Message ID is preserved - the message is marked as deleted but not removed from array
-    /// @param index The index of the message to remove
-    function removeMessage(uint256 index) external {
-        User storage u = users[msg.sender];
-        require(u.checkInPeriod > 0, "not registered");
-        require(index < u.messages.length, "invalid index");
-
-        Message storage m = u.messages[index];
-        require(!m.deleted, "already deleted");
-        require(!m.claimed, "cannot delete claimed message");
-
-        // XOR encrypted key share with random data to destroy content
-        euint128 randSkShare = FHE.randEuint128();
-        m._skShare = FHE.xor(m._skShare, randSkShare);
-
-        // XOR each email limb with random data
-        for (uint i = 0; i < m.recipientEmail.limbs.length;) {
-            euint256 randLimb = FHE.randEuint256();
-            m.recipientEmail.limbs[i] = FHE.xor(m.recipientEmail.limbs[i], randLimb);
-            unchecked { ++i; }
-        }
-
-        // Clear unencrypted data
-        delete m.payload;
-        delete m.publicMessage;
-        m.recipientEmail.byteLen = 0;
-
-        // Mark as deleted
-        m.deleted = true;
-
-        emit MessageDeleted(msg.sender, index);
-    }
-
     function retrieve(address owner, uint256 index) external view returns (
         euint128 skShare,
         euint256[] memory encodedRecipientEmail,
         uint32 emailByteLen,
         bytes memory payload,
-        string memory publicMessage
+        string memory publicMessage,
+        bytes32 hash
     ) {
         User storage u = users[owner];
         require(index < u.messages.length, "invalid index");
 
         Message storage m = u.messages[index];
-        require(!m.deleted, "message was deleted");
 
         bool isOwner = (msg.sender == owner);
 
@@ -400,6 +398,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         emailByteLen = m.recipientEmail.byteLen;
         payload = m.payload;
         publicMessage = m.publicMessage;
+        hash = m.hash;
     }
 }
 
