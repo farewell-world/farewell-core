@@ -31,13 +31,25 @@ async function deployFixture() {
 const toBytes = (s: string) => ethers.toUtf8Bytes(s);
 
 // utf8 → 32B-chunks (right-padded with zeros), returned as BigInt words
-function chunk32ToU256Words(u8: Uint8Array): bigint[] {
+// Pads to MAX_EMAIL_BYTE_LEN (256 bytes) to prevent length leakage
+const MAX_EMAIL_BYTE_LEN = 256;
+
+function chunk32ToU256Words(u8: Uint8Array, padToMax: boolean = true): bigint[] {
+  // Pad to MAX_EMAIL_BYTE_LEN if requested (for emails)
+  let padded: Uint8Array;
+  if (padToMax && u8.length <= MAX_EMAIL_BYTE_LEN) {
+    padded = new Uint8Array(MAX_EMAIL_BYTE_LEN);
+    padded.set(u8, 0);
+  } else {
+    padded = u8;
+  }
+  
   const words: bigint[] = [];
-  for (let i = 0; i < u8.length; i += 32) {
-    const slice = u8.slice(i, i + 32);
-    const padded = new Uint8Array(32);
-    padded.set(slice);
-    words.push(BigInt("0x" + Buffer.from(padded).toString("hex")));
+  for (let i = 0; i < padded.length; i += 32) {
+    const slice = padded.subarray(i, i + 32);
+    const chunk = new Uint8Array(32);
+    chunk.set(slice);
+    words.push(BigInt("0x" + Buffer.from(chunk).toString("hex")));
   }
   return words;
 }
@@ -556,6 +568,137 @@ describe("Farewell", function () {
       // Message 2 should still be accessible
       const msg2 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 2);
       expect(ethers.toUtf8String(msg2.payload)).to.equal(payload1);
+    });
+  });
+
+  describe("Security validations", function () {
+    it("should reject registration with checkInPeriod < 1 day", async function () {
+      const shortPeriod = 12 * 60 * 60; // 12 hours
+      await expect(
+        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](shortPeriod, 7 * 24 * 60 * 60)
+      ).to.be.revertedWith("checkInPeriod too short");
+    });
+
+    it("should reject registration with gracePeriod < 1 day", async function () {
+      const shortGrace = 12 * 60 * 60; // 12 hours
+      await expect(
+        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](30 * 24 * 60 * 60, shortGrace)
+      ).to.be.revertedWith("gracePeriod too short");
+    });
+
+    it("should reject name longer than 100 characters", async function () {
+      const longName = "a".repeat(101);
+      await expect(
+        FarewellContract.connect(signers.owner).register(longName)
+      ).to.be.revertedWith("name too long");
+    });
+
+    it("should reject claim with invalid index (out of bounds)", async function () {
+      // Register and mark deceased
+      const checkInPeriod = 1;
+      const gracePeriod = 1;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add a message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = emailWords1.length;
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        limbsHandles,
+        emailBytes1.length,
+        skShareHandle,
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Advance time and mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Try to claim with invalid index
+      await expect(
+        FarewellContract.connect(signers.alice).claim(signers.owner.address, 999)
+      ).to.be.revertedWith("invalid index");
+    });
+
+    it("should enforce email padding to 256 bytes (8 limbs)", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Create encrypted input with correct padding (8 limbs)
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = emailWords1.length;
+      expect(nLimbs).to.eq(8); // Should be 8 limbs for 256 bytes
+
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      // This should work with padded email
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        limbsHandles,
+        emailBytes1.length, // original length
+        skShareHandle,
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Try with wrong number of limbs (should fail)
+      const wrongLimbs = limbsHandles.slice(0, 4); // Only 4 limbs instead of 8
+      await expect(
+        FarewellContract.connect(signers.owner).addMessage(
+          wrongLimbs,
+          emailBytes1.length,
+          skShareHandle,
+          payloadBytes1,
+          encrypted.inputProof
+        )
+      ).to.be.revertedWith("limbs must match padded length");
+    });
+
+    it("should reject email longer than 256 bytes", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Create a long email (> 256 bytes)
+      const longEmail = "a".repeat(257) + "@example.com";
+      const longEmailBytes = toBytes(longEmail);
+      const longEmailWords = chunk32ToU256Words(longEmailBytes);
+
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of longEmailWords) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+
+      const nLimbs = longEmailWords.length;
+      const limbsHandles = encrypted.handles.slice(0, nLimbs);
+      const skShareHandle = encrypted.handles[nLimbs];
+
+      // Should fail because emailByteLen > MAX_EMAIL_BYTE_LEN
+      await expect(
+        FarewellContract.connect(signers.owner).addMessage(
+          limbsHandles,
+          longEmailBytes.length,
+          skShareHandle,
+          payloadBytes1,
+          encrypted.inputProof
+        )
+      ).to.be.revertedWith("email too long");
     });
   });
 });

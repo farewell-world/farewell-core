@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint256, euint128, euint32, externalEuint32, externalEuint128, externalEuint256} from "@fhevm/solidity/lib/FHE.sol";
+import {
+    FHE, euint256, euint128, euint32, externalEuint32, externalEuint128, externalEuint256
+} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 // OZ upgradeable imports
@@ -14,6 +16,9 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 /// - Recipients are EMAILS (string), not wallet addresses.
 /// - Anyone can call `claim` after timeout; we emit an event with (email, data).
 /// - On-chain data is public. Treat `data` as ciphertext in real use.
+/// @dev NOTE: There is no recovery mechanism if a user is legitimately marked deceased
+///      but was actually unable to ping (hospitalization, lost keys, etc.).
+///      This is a known limitation to be addressed in future versions.
 contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     // Notifier is the entity that marked a user as deceased
     struct Notifier {
@@ -22,9 +27,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     }
 
     /// @dev Encrypted recipient "string" as 32-byte limbs (each limb is an euint256) + original length.
+    /// @notice byteLen stores the original length for trimming during decryption.
+    ///         All emails are padded to MAX_EMAIL_BYTE_LEN before encryption to prevent length leakage.
     struct EncryptedString {
         euint256[] limbs; // each 32 bytes of the UTF-8 email packed as uint256
-        uint32 byteLen;   // original email length in bytes (not chars)
+        uint32 byteLen;   // original email length in bytes (not chars) - used for trimming padding
     }
 
     struct Message {
@@ -36,8 +43,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         uint64 createdAt;
         bool claimed;
         address claimedBy;
+        /// @notice Public message stored in cleartext - visible to anyone
         string publicMessage;
         bytes32 hash;  // Hash of all input attributes
+        bool deleted;   // Marks if message has been deleted by owner
     }
 
     struct User {
@@ -61,6 +70,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     uint64 private totalUsers;
     uint64 private totalMessages;
 
+    // Storage gap for upgradeability safety
+    uint256[50] private __gap;
+
     // -----------------------
     // Events
     // -----------------------
@@ -72,6 +84,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
+    event MessageDeleted(address indexed user, uint256 indexed index);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -104,8 +117,18 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     // --- User lifecycle ---
     uint64 constant DEFAULT_CHECKIN = 30 days;
     uint64 constant DEFAULT_GRACE = 7 days;
+    
+    // --- Message constants ---
+    /// @notice Maximum email byte length (emails are padded to this length to prevent length leakage)
+    uint32 constant MAX_EMAIL_BYTE_LEN = 256;
+    /// @notice Maximum payload byte length (optional, for future payload padding)
+    uint32 constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
 
     function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) internal {
+        require(checkInPeriod >= 1 days, "checkInPeriod too short");
+        require(gracePeriod >= 1 days, "gracePeriod too short");
+        require(bytes(name).length <= 100, "name too long");
+        
         User storage u = users[msg.sender];
 
         if (u.lastCheckIn != 0) {
@@ -154,33 +177,34 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     function getUserName(address user) external view returns (string memory) {
         User storage u = users[user];
-        require(u.checkInPeriod > 0, "not registered");
+        require(u.lastCheckIn != 0, "not registered");
         return u.name;
     }
 
     /// @notice Update the user's display name
     function setName(string memory newName) external {
         User storage u = users[msg.sender];
-        require(u.checkInPeriod > 0, "not registered");
+        require(u.lastCheckIn != 0, "not registered");
+        require(bytes(newName).length <= 100, "name too long");
         u.name = newName;
         emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
     }
 
     function getRegisteredOn(address user) external view returns (uint64) {
         User storage u = users[user];
-        require(u.checkInPeriod > 0, "not registered");
+        require(u.lastCheckIn != 0, "not registered");
         return u.registeredOn;
     }
 
     function getLastCheckIn(address user) external view returns (uint64) {
         User storage u = users[user];
-        require(u.checkInPeriod > 0, "not registered");
+        require(u.lastCheckIn != 0, "not registered");
         return u.lastCheckIn;
     }
 
     function getDeceasedStatus(address user) external view returns (bool) {
         User storage u = users[user];
-        require(u.checkInPeriod > 0, "not registered");
+        require(u.lastCheckIn != 0, "not registered");
         return u.deceased;
     }
 
@@ -215,9 +239,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         User storage u = users[msg.sender];
         require(u.checkInPeriod > 0, "user not registered");
         require(emailByteLen > 0, "email len=0");
+        require(emailByteLen <= MAX_EMAIL_BYTE_LEN, "email too long");
         require(limbs.length > 0, "no limbs");
         require(payload.length > 0, "bad payload size");
-        require(limbs.length == (uint256(emailByteLen) + 31) / 32, "limb count mismatch");
+        require(payload.length <= MAX_PAYLOAD_BYTE_LEN, "payload too long");
+        // All emails must be padded to MAX_EMAIL_BYTE_LEN (8 limbs for 256 bytes)
+        require(limbs.length == (uint256(MAX_EMAIL_BYTE_LEN) + 31) / 32, "limbs must match padded length");
 
         index = u.messages.length;
         u.messages.push();
@@ -287,6 +314,22 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         return u.messages.length;
     }
 
+    /// @notice Remove a message (only owner, not deceased, not claimed)
+    /// @param index The index of the message to remove
+    function removeMessage(uint256 index) external {
+        User storage u = users[msg.sender];
+        require(u.checkInPeriod > 0, "not registered");
+        require(!u.deceased, "user is deceased");
+        require(index < u.messages.length, "invalid index");
+        
+        Message storage m = u.messages[index];
+        require(!m.deleted, "already deleted");
+        require(!m.claimed, "cannot delete claimed message");
+        
+        m.deleted = true;
+        emit MessageDeleted(msg.sender, index);
+    }
+
     /// @notice Compute the hash of message inputs without adding the message
     /// @dev Useful for checking if a message with these inputs already exists
     function computeMessageHash(
@@ -306,6 +349,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     }
 
     // --- Death and delivery ---
+    /// @notice Mark a user as deceased after timeout period
+    /// @dev Block timestamps can be manipulated by miners/validators within ~15 second windows.
+    ///      Impact is low given reasonable check-in periods, but worth noting.
     function markDeceased(address user) external {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "user not registered");
@@ -327,29 +373,19 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         emit Deceased(user, uint64(block.timestamp), u.notifier.notifierAddress);
     }
 
-    // FOR DEBUG ONLY!
-    function forceDeceased(address user) external {
-        User storage u = users[user];
-        require(u.checkInPeriod > 0, "user not registered");
-        require(!u.deceased, "user already deceased");
-
-        // the user is considered from now on as deceased
-        u.deceased = true;
-
-        // the sender who marked the user as deceased has priority to claim the message during the next 24h
-        u.notifier = Notifier({
-            notificationTime: uint64(block.timestamp),
-            notifierAddress: msg.sender
-        });
-
-        emit Deceased(user, uint64(block.timestamp), u.notifier.notifierAddress);
-    }
-
     /// @notice Anyone may trigger delivery after user is deceased.
     /// @dev Emits data+email; mark delivered to prevent duplicates.
+    /// @dev NOTE: Re-claiming messages after the 24h exclusivity window is currently allowed.
+    ///      This is a known limitation that will be addressed with a proof-of-delivery mechanism.
+    ///      Once a claimer submits proof of message delivery after retrieve(), re-claiming should be prevented.
+    ///      This mechanism is not yet implemented and should be added in a future version.
+    /// @dev NOTE: Once FHE.allow() is called for a claimer, that permission persists.
+    ///      If multiple parties claim different messages from the same user, they all get decryption access.
+    ///      This may be intended behavior, but should be considered when designing the protocol.
     function claim(address user, uint256 index) external {
         User storage u = users[user];
         require(u.deceased, "not deliverable");
+        require(index < u.messages.length, "invalid index");
 
         address claimerAddress = msg.sender;
 
@@ -371,6 +407,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         emit Claimed(user, index, claimerAddress);
     }
 
+    /// @notice Retrieve message data (encrypted handles are returned but can only be decrypted
+    ///         by authorized parties via FHE.allow() permissions)
+    /// @param owner The address of the message owner
+    /// @param index The index of the message to retrieve
     function retrieve(address owner, uint256 index) external view returns (
         euint128 skShare,
         euint256[] memory encodedRecipientEmail,
@@ -383,6 +423,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         require(index < u.messages.length, "invalid index");
 
         Message storage m = u.messages[index];
+        require(!m.deleted, "message was deleted");
 
         bool isOwner = (msg.sender == owner);
 
