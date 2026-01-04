@@ -46,7 +46,31 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         /// @notice Public message stored in cleartext - visible to anyone
         string publicMessage;
         bytes32 hash;  // Hash of all input attributes
-        bool deleted;   // Marks if message has been deleted by owner
+        bool revoked;  // Marks if message has been revoked by owner (cannot be claimed)
+    }
+
+    struct CouncilMember {
+        address member;       // Council member address
+        uint64 joinedAt;      // Timestamp when member joined
+        bool active;          // Whether member is active
+    }
+
+    /// @notice User status enum for getUserState
+    enum UserStatus {
+        Alive,          // User is active and within check-in period
+        Grace,          // User missed check-in but is within grace period
+        Deceased,       // User is deceased (finalized or timeout)
+        FinalAlive      // User was voted alive by council - cannot be marked deceased
+    }
+
+    /// @notice Council vote during grace period to decide alive/dead status
+    struct GraceVote {
+        mapping(address => bool) hasVoted;      // Track who has voted
+        mapping(address => bool) votedAlive;    // Track how each member voted (true=alive, false=dead)
+        uint256 aliveVotes;                     // Count of alive votes
+        uint256 deadVotes;                      // Count of dead votes
+        bool decided;                           // Whether a decision has been reached
+        bool decisionAlive;                     // The decision (true=alive, false=dead)
     }
 
     struct User {
@@ -55,13 +79,20 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         uint64 gracePeriod;   // seconds
         uint64 lastCheckIn;   // timestamp
         uint64 registeredOn;  // timestamp
-        bool deceased;        // set after timeout
+        bool deceased;        // set after timeout or council vote
+        bool finalAlive;      // set if council voted user alive - prevents future deceased status
         Notifier notifier;    // who marked as deceased
+        uint256 deposit;      // ETH deposited for delivery costs
         // All messages for this user live here
         Message[] messages;
     }
 
     mapping(address => User) public users;
+    mapping(address => CouncilMember[]) public councils;  // Per-user council members
+    mapping(address => mapping(address => bool)) public councilMembers;  // Quick lookup: user => member => isMember
+    mapping(address => GraceVote) internal graceVotes;  // Per-user grace period voting
+    mapping(address => address[]) public memberToUsers;  // Reverse index: member => users they're council for
+    mapping(bytes32 => bool) public rewardsClaimed;  // Track if reward was already claimed (user+messageIndex hash)
 
     // Mapping to track message hashes for efficient lookup
     mapping(bytes32 => bool) public messageHashes;
@@ -85,6 +116,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
     event MessageDeleted(address indexed user, uint256 indexed index);
+    event MessageEdited(address indexed user, uint256 indexed index);
+    event MessageRevoked(address indexed user, uint256 indexed index);
+    event CouncilMemberAdded(address indexed user, address indexed member);
+    event CouncilMemberRemoved(address indexed user, address indexed member);
+    event GraceVoteCast(address indexed user, address indexed voter, bool votedAlive);
+    event StatusDecided(address indexed user, bool isAlive);
+    event DepositAdded(address indexed user, uint256 amount);
+    event RewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, uint256 amount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -120,9 +159,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     
     // --- Message constants ---
     /// @notice Maximum email byte length (emails are padded to this length to prevent length leakage)
-    uint32 constant MAX_EMAIL_BYTE_LEN = 256;
+    // Reduced from 256 to fit within 2048-bit FHEVM limit (7 limbs = 1792 bits + 128 bits s = 1920 bits)
+    uint32 constant MAX_EMAIL_BYTE_LEN = 224;
     /// @notice Maximum payload byte length (optional, for future payload padding)
     uint32 constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
+    
+    // --- Reward constants ---
+    uint256 constant BASE_REWARD = 0.01 ether;        // Base reward per message
+    uint256 constant REWARD_PER_KB = 0.005 ether;    // Additional reward per KB of payload
 
     function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) internal {
         require(checkInPeriod >= 1 days, "checkInPeriod too short");
@@ -314,20 +358,82 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         return u.messages.length;
     }
 
-    /// @notice Remove a message (only owner, not deceased, not claimed)
-    /// @param index The index of the message to remove
-    function removeMessage(uint256 index) external {
+    /// @notice Revoke a message (only owner, not deceased, not claimed)
+    /// @param index The index of the message to revoke
+    function revokeMessage(uint256 index) external {
         User storage u = users[msg.sender];
         require(u.checkInPeriod > 0, "not registered");
         require(!u.deceased, "user is deceased");
         require(index < u.messages.length, "invalid index");
         
         Message storage m = u.messages[index];
-        require(!m.deleted, "already deleted");
-        require(!m.claimed, "cannot delete claimed message");
+        require(!m.revoked, "already revoked");
+        require(!m.claimed, "cannot revoke claimed message");
         
-        m.deleted = true;
-        emit MessageDeleted(msg.sender, index);
+        m.revoked = true;
+        emit MessageRevoked(msg.sender, index);
+    }
+    
+    /// @notice Edit a message (only owner, not deceased, not claimed, not revoked)
+    /// @param index The index of the message to edit
+    function editMessage(
+        uint256 index,
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage
+    ) external {
+        User storage u = users[msg.sender];
+        require(u.checkInPeriod > 0, "user not registered");
+        require(!u.deceased, "user is deceased");
+        require(index < u.messages.length, "invalid index");
+        
+        Message storage m = u.messages[index];
+        require(!m.revoked, "cannot edit revoked message");
+        require(!m.claimed, "cannot edit claimed message");
+        require(emailByteLen > 0, "email len=0");
+        require(emailByteLen <= MAX_EMAIL_BYTE_LEN, "email too long");
+        require(limbs.length > 0, "no limbs");
+        require(payload.length > 0, "bad payload size");
+        require(payload.length <= MAX_PAYLOAD_BYTE_LEN, "payload too long");
+        require(limbs.length == (uint256(MAX_EMAIL_BYTE_LEN) + 31) / 32, "limbs must match padded length");
+        
+        // Update encrypted email limbs
+        m.recipientEmail.limbs = new euint256[](limbs.length);
+        for (uint i = 0; i < limbs.length;) {
+            euint256 v = FHE.fromExternal(limbs[i], inputProof);
+            m.recipientEmail.limbs[i] = v;
+            FHE.allowThis(v);
+            FHE.allow(v, msg.sender);
+            unchecked { ++i; }
+        }
+        m.recipientEmail.byteLen = emailByteLen;
+        
+        // Update encrypted skShare
+        m._skShare = FHE.fromExternal(encSkShare, inputProof);
+        FHE.allowThis(m._skShare);
+        FHE.allow(m._skShare, msg.sender);
+        
+        // Update payload and public message
+        m.payload = payload;
+        if (bytes(publicMessage).length != 0) {
+            m.publicMessage = publicMessage;
+        }
+        
+        // Recompute hash
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            limbs,
+            emailByteLen,
+            encSkShare,
+            payload,
+            publicMessage
+        ));
+        m.hash = messageHash;
+        messageHashes[messageHash] = true;
+        
+        emit MessageEdited(msg.sender, index);
     }
 
     /// @notice Compute the hash of message inputs without adding the message
@@ -352,10 +458,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     /// @notice Mark a user as deceased after timeout period
     /// @dev Block timestamps can be manipulated by miners/validators within ~15 second windows.
     ///      Impact is low given reasonable check-in periods, but worth noting.
+    /// @dev Users who have been voted "alive" by council cannot be marked deceased.
     function markDeceased(address user) external {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "user not registered");
         require(!u.deceased, "user already deceased");
+        require(!u.finalAlive, "user voted alive by council");
 
         // timeout condition: now > lastCheckIn + checkInPeriod + grace
         uint256 deadline = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
@@ -395,6 +503,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         }
 
         Message storage m = u.messages[index];
+        require(!m.revoked, "message was revoked");
         m.claimed = true;
         m.claimedBy = claimerAddress;
 
@@ -423,7 +532,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         require(index < u.messages.length, "invalid index");
 
         Message storage m = u.messages[index];
-        require(!m.deleted, "message was deleted");
+        require(!m.revoked, "message was revoked");
 
         bool isOwner = (msg.sender == owner);
 
@@ -440,6 +549,296 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         payload = m.payload;
         publicMessage = m.publicMessage;
         hash = m.hash;
+    }
+    
+    // --- Council functions ---
+    
+    /// @notice Add a council member (no stake required, no size limit)
+    /// @param member The address to add as council member
+    function addCouncilMember(address member) external {
+        require(member != address(0), "invalid member");
+        require(member != msg.sender, "cannot add self");
+        
+        User storage u = users[msg.sender];
+        require(u.checkInPeriod > 0, "not registered");
+        
+        require(!councilMembers[msg.sender][member], "already a member");
+        
+        councils[msg.sender].push(CouncilMember({
+            member: member,
+            joinedAt: uint64(block.timestamp),
+            active: true
+        }));
+        councilMembers[msg.sender][member] = true;
+        
+        // Add to reverse index
+        memberToUsers[member].push(msg.sender);
+        
+        emit CouncilMemberAdded(msg.sender, member);
+    }
+    
+    /// @notice Remove a council member (can be called by user only)
+    /// @param member The address to remove from council
+    function removeCouncilMember(address member) external {
+        require(councilMembers[msg.sender][member], "not a member");
+        
+        CouncilMember[] storage council = councils[msg.sender];
+        uint256 length = council.length;
+        
+        for (uint256 i = 0; i < length;) {
+            if (council[i].member == member) {
+                // Remove from array (swap with last element)
+                if (i < length - 1) {
+                    council[i] = council[length - 1];
+                }
+                council.pop();
+                councilMembers[msg.sender][member] = false;
+                
+                // Remove from reverse index
+                _removeFromMemberToUsers(member, msg.sender);
+                
+                emit CouncilMemberRemoved(msg.sender, member);
+                return;
+            }
+            unchecked { ++i; }
+        }
+        revert("member not found");
+    }
+    
+    /// @notice Internal helper to remove user from memberToUsers reverse index
+    function _removeFromMemberToUsers(address member, address userAddr) internal {
+        address[] storage userList = memberToUsers[member];
+        uint256 length = userList.length;
+        for (uint256 i = 0; i < length;) {
+            if (userList[i] == userAddr) {
+                if (i < length - 1) {
+                    userList[i] = userList[length - 1];
+                }
+                userList.pop();
+                return;
+            }
+            unchecked { ++i; }
+        }
+    }
+    
+    /// @notice Vote on a user's status during grace period
+    /// @param user The user to vote on
+    /// @param voteAlive True to vote the user is alive, false to vote dead
+    function voteOnStatus(address user, bool voteAlive) external {
+        require(councilMembers[user][msg.sender], "not a council member");
+        
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "user not registered");
+        require(!u.deceased, "user already deceased");
+        require(!u.finalAlive, "status already finalized");
+        
+        // Check user is in grace period
+        uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+        uint256 graceEnd = checkInEnd + uint256(u.gracePeriod);
+        require(block.timestamp > checkInEnd, "not in grace period");
+        require(block.timestamp <= graceEnd, "grace period ended");
+        
+        GraceVote storage vote = graceVotes[user];
+        require(!vote.decided, "vote already decided");
+        require(!vote.hasVoted[msg.sender], "already voted");
+        
+        vote.hasVoted[msg.sender] = true;
+        vote.votedAlive[msg.sender] = voteAlive;
+        
+        if (voteAlive) {
+            vote.aliveVotes++;
+        } else {
+            vote.deadVotes++;
+        }
+        
+        emit GraceVoteCast(user, msg.sender, voteAlive);
+        
+        // Check for majority
+        uint256 councilSize = councils[user].length;
+        uint256 majority = (councilSize / 2) + 1;
+        
+        if (vote.aliveVotes >= majority) {
+            // Majority voted alive - reset check-in and mark as finalAlive
+            vote.decided = true;
+            vote.decisionAlive = true;
+            u.lastCheckIn = uint64(block.timestamp);
+            u.finalAlive = true;
+            emit StatusDecided(user, true);
+            emit Ping(user, u.lastCheckIn);
+        } else if (vote.deadVotes >= majority) {
+            // Majority voted dead - mark as deceased
+            vote.decided = true;
+            vote.decisionAlive = false;
+            u.deceased = true;
+            u.notifier = Notifier({
+                notificationTime: uint64(block.timestamp),
+                notifierAddress: msg.sender
+            });
+            emit StatusDecided(user, false);
+            emit Deceased(user, uint64(block.timestamp), msg.sender);
+        }
+    }
+    
+    /// @notice Get user's current status
+    /// @param user The user address
+    /// @return status The user's current status
+    /// @return graceSecondsLeft Seconds left in grace period (0 if not in grace)
+    function getUserState(address user) external view returns (UserStatus status, uint64 graceSecondsLeft) {
+        User storage u = users[user];
+        require(u.checkInPeriod > 0, "user not registered");
+        
+        if (u.deceased) {
+            return (UserStatus.Deceased, 0);
+        }
+        
+        if (u.finalAlive) {
+            return (UserStatus.FinalAlive, 0);
+        }
+        
+        uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+        uint256 graceEnd = checkInEnd + uint256(u.gracePeriod);
+        
+        if (block.timestamp <= checkInEnd) {
+            return (UserStatus.Alive, 0);
+        } else if (block.timestamp <= graceEnd) {
+            uint64 remaining = uint64(graceEnd - block.timestamp);
+            return (UserStatus.Grace, remaining);
+        } else {
+            // Past grace period but not yet marked deceased
+            return (UserStatus.Deceased, 0);
+        }
+    }
+    
+    /// @notice Get all users that a member is council for
+    /// @param member The council member address
+    /// @return userAddresses Array of user addresses
+    function getUsersForCouncilMember(address member) external view returns (address[] memory userAddresses) {
+        return memberToUsers[member];
+    }
+    
+    /// @notice Get council members for a user
+    /// @param user The user address
+    /// @return members Array of council member addresses
+    /// @return joinedAts Array of join timestamps
+    function getCouncilMembers(address user) external view returns (
+        address[] memory members,
+        uint64[] memory joinedAts
+    ) {
+        CouncilMember[] storage council = councils[user];
+        uint256 length = council.length;
+        
+        members = new address[](length);
+        joinedAts = new uint64[](length);
+        
+        for (uint256 i = 0; i < length;) {
+            members[i] = council[i].member;
+            joinedAts[i] = council[i].joinedAt;
+            unchecked { ++i; }
+        }
+    }
+    
+    /// @notice Get grace vote status for a user
+    /// @param user The user address
+    /// @return aliveVotes Number of alive votes
+    /// @return deadVotes Number of dead votes
+    /// @return decided Whether a decision has been reached
+    /// @return decisionAlive The decision if decided (true=alive)
+    function getGraceVoteStatus(address user) external view returns (
+        uint256 aliveVotes,
+        uint256 deadVotes,
+        bool decided,
+        bool decisionAlive
+    ) {
+        GraceVote storage vote = graceVotes[user];
+        return (vote.aliveVotes, vote.deadVotes, vote.decided, vote.decisionAlive);
+    }
+    
+    /// @notice Check if a council member has voted on a user's grace period
+    /// @param user The user address
+    /// @param member The council member address
+    /// @return hasVoted Whether the member has voted
+    /// @return votedAlive How they voted (only valid if hasVoted is true)
+    function getGraceVote(address user, address member) external view returns (bool hasVoted, bool votedAlive) {
+        GraceVote storage vote = graceVotes[user];
+        return (vote.hasVoted[member], vote.votedAlive[member]);
+    }
+    
+    // --- Deposits and Rewards ---
+    
+    /// @notice Deposit ETH to fund delivery costs
+    function deposit() external payable {
+        require(msg.value > 0, "must deposit something");
+        
+        User storage u = users[msg.sender];
+        require(u.checkInPeriod > 0, "not registered");
+        
+        u.deposit += msg.value;
+        
+        emit DepositAdded(msg.sender, msg.value);
+    }
+    
+    /// @notice Get user's deposit balance
+    /// @param user The user address
+    function getDeposit(address user) external view returns (uint256) {
+        return users[user].deposit;
+    }
+    
+    /// @notice Calculate reward for a message
+    /// @param user The user address
+    /// @param messageIndex The message index
+    function calculateReward(address user, uint256 messageIndex) public view returns (uint256) {
+        User storage u = users[user];
+        require(messageIndex < u.messages.length, "invalid index");
+        
+        Message storage m = u.messages[messageIndex];
+        uint256 payloadSizeKB = (m.payload.length + 1023) / 1024; // Round up to KB
+        
+        uint256 reward = BASE_REWARD + (payloadSizeKB * REWARD_PER_KB);
+        
+        // Cap reward at user's deposit
+        if (reward > u.deposit) {
+            reward = u.deposit;
+        }
+        
+        return reward;
+    }
+    
+    /// @notice Claim reward after delivering message (with zk.email proof)
+    /// @param user The user address
+    /// @param messageIndex The message index
+    /// @param zkProof The zk.email proof bytes (verification logic to be implemented)
+    function claimReward(
+        address user,
+        uint256 messageIndex,
+        bytes calldata zkProof
+    ) external {
+        User storage u = users[user];
+        require(u.deceased, "user not deceased");
+        require(messageIndex < u.messages.length, "invalid index");
+        
+        Message storage m = u.messages[messageIndex];
+        require(m.claimed, "message not claimed");
+        require(m.claimedBy == msg.sender, "not the claimer");
+        
+        // TODO: Verify zk.email proof
+        // For now, we'll accept any non-empty proof
+        // In production, this should verify the proof against the encrypted email
+        require(zkProof.length > 0, "invalid proof");
+        
+        // Check if reward already claimed (prevent double claiming)
+        bytes32 rewardKey = keccak256(abi.encodePacked(user, messageIndex));
+        require(!rewardsClaimed[rewardKey], "reward already claimed");
+        
+        uint256 reward = calculateReward(user, messageIndex);
+        require(reward > 0, "no reward available");
+        require(u.deposit >= reward, "insufficient deposit");
+        
+        rewardsClaimed[rewardKey] = true;
+        u.deposit -= reward;
+        
+        payable(msg.sender).transfer(reward);
+        
+        emit RewardClaimed(user, messageIndex, msg.sender, reward);
     }
 }
 
