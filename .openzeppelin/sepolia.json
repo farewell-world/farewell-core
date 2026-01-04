@@ -1,0 +1,3262 @@
+{
+  "manifestVersion": "3.2",
+  "proxies": [
+    {
+      "address": "0xe3f869Dc88f4118972EF7abFEB176aEA0eee074b",
+      "txHash": "0x131b1d4cc7be325e9214de8bc511df2557ea858f51e155be1ad9d1453ab8ab22",
+      "kind": "uups"
+    },
+    {
+      "address": "0x4c63d82C5d8e2192FbC6f30bc44D0aB16c812097",
+      "txHash": "0x1d181714f64ed9141f9e784185b8925c5be3c8d15abc3b8e0f3ff29a0eb0caaf",
+      "kind": "uups"
+    },
+    {
+      "address": "0xec20dEd9b6466053b1Dc384D03c2c4DE7f457b06",
+      "txHash": "0xf500d048fee5630f1312ba7b08bb4ac64ad71ee0b19a75f8acf23707f5d22b99",
+      "kind": "uups"
+    },
+    {
+      "address": "0xF38B4cF264A80af1f3d105a0807E3015d0f8616f",
+      "txHash": "0x80c376b5b45c6992b1136e4690562c0cd7dd9278831671e24327543372135ca2",
+      "kind": "uups"
+    },
+    {
+      "address": "0x4BDD78d5F582FBa23d4ADD5A8d2a0091bb4C4C23",
+      "txHash": "0x094d8b64b66758ef29180352eb773fe4e76af4e8a2c6bb5bf2f83c687d9d3e06",
+      "kind": "uups"
+    },
+    {
+      "address": "0xBaCaf204B8bc5286fEb8e5EcC9B1De2535212F52",
+      "txHash": "0x1c21ba6570749d94380a0c7da4cfa9e41620a99f78ffc064e025ac5294c5787f",
+      "kind": "uups"
+    },
+    {
+      "address": "0xa5236EFc054cCf9b9B214d8e0415f80B75AE3b30",
+      "txHash": "0x7e9feed0c973285b1da602a939ddff682a184bbd4fd3af92f2530289648cb20b",
+      "kind": "uups"
+    },
+    {
+      "address": "0x6459087492b6F8aa6314559DdB0F90Fc2B54FE22",
+      "txHash": "0x6ebbe3abf88bcc6013a56f8c586bdd4f87207a4d7570d0ff29c43c3ddcff4347",
+      "kind": "uups"
+    },
+    {
+      "address": "0xC6a9Fc951483a70D3B6C77caE7585b595938c670",
+      "txHash": "0xe33107184cccbe9c9e09dd7356d7419f7d2105c8a8a79f58b5327856784f3716",
+      "kind": "uups"
+    },
+    {
+      "address": "0xF544D730eb2a4c8E56a0A5b785a683e9DA30A2db",
+      "txHash": "0x5bb8183c7ea1fabeffe667f6d67db3f01d52ede97a426ab1664aba3375c4fb5e",
+      "kind": "uups"
+    },
+    {
+      "address": "0x8433B93477Fc1a80e216fE52b3b74BC4265207ec",
+      "txHash": "0x85692b0bc5333f92305a5453c308af657f5de928bf9e2f0967b2de1fc6e6a8a6",
+      "kind": "uups"
+    },
+    {
+      "address": "0x279Fe0806dD7027922986caA0951FfD172c05D55",
+      "txHash": "0xa83b9891a269adabd0900d1ff76defb67f16b633a388a8639214eae02c328b3c",
+      "kind": "uups"
+    },
+    {
+      "address": "0x859be49c6C24bC7800AB02e5A2F188c8C14f23DB",
+      "txHash": "0x0a30fd22ab950d87dc53dfb33adc13283edd26835887cb425e99adcdf330b93d",
+      "kind": "uups"
+    },
+    {
+      "address": "0xc880b9E4491440C94098722c70a25cA1C8Fda83E",
+      "txHash": "0x6b6346134dc7990f0546e22fef7ac149eecbbea9b763b0abc71bd5f7f88f65b6",
+      "kind": "uups"
+    },
+    {
+      "address": "0x2594985A1963c4f7904a38aEf7e7efb830774b9f",
+      "txHash": "0xac00c90260274e33137293dd9adc039a999665734a472321792d75e2ed9e34f7",
+      "kind": "uups"
+    },
+    {
+      "address": "0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3",
+      "txHash": "0x02c103f2debc4b04affbaeff43eef97cac558c030bc2a7ffff81b88acba749d0",
+      "kind": "uups"
+    }
+  ],
+  "impls": {
+    "52ce80d3c25f27c1aa0d790e0ec984be139d051a5088aefbc1973daf7d93ea53": {
+      "address": "0x0a545328cd959B31ec50bE07DE5f3B8b815e8f41",
+      "txHash": "0x8eadade58b92aa426321dd098620b944110ffda148ac9721b947a9d933194ae5",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_struct(User)40623_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:62"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10058_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)9998_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)40603_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_userDefinedValueType(euint256)41804)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)40623_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)40586_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)41804)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)40603_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)40586_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)41772",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_struct(Notifier)40578_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)40623_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)40578_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)40603_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)41772": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)41804": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "4e6a4335b095a3ac13fea3ad6cecf46d05f0c65398bc48b4c3658e0292cc02b5": {
+      "address": "0xA5e0A0e11c38843D228d3bB54b60d862Eada8d08",
+      "txHash": "0xe0f94f1aca26269d3059ff1023926a443472a6b3a89d0543f00b9c61de385f58",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "SepoliaConfigUpgradeable",
+            "src": "contracts/fhevm/SepoliaConfigUpgradeable.sol:23"
+          },
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "50",
+            "type": "t_mapping(t_address,t_struct(User)40534_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:62"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10049_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)9989_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)40514_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_array(t_userDefinedValueType(euint256)41724)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)40534_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)40497_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)41724)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)40514_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)40497_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)41692",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_struct(Notifier)40489_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)40534_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)40489_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)40514_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)41692": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)41724": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "24c3767503adb787097bb890f892bb17ce58eaf9083eb754ca560aaa4b4b9dc8": {
+      "address": "0xb0d6827CF82d928A4DA9C583A24539659C31488c",
+      "txHash": "0x2156330341c1df9fa5c564429ae2bc9127caebcf2758d3162a15b2e5268cdf3e",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "SepoliaConfigUpgradeable",
+            "src": "contracts/fhevm/SepoliaConfigUpgradeable.sol:23"
+          },
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "50",
+            "type": "t_mapping(t_address,t_struct(User)40534_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:62"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10049_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)9989_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)40514_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_array(t_userDefinedValueType(euint256)41724)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)40534_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)40497_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)41724)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)40514_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)40497_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)41692",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_struct(Notifier)40489_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)40534_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)40489_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)40514_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)41692": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)41724": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "349302769dd4b4dbb0bf409fe0b2b5a8d07fe00e25d6e2489e77fa6724b27536": {
+      "address": "0xF94c713D8E49868dD0aEc08Fd06695EAecc6B080",
+      "txHash": "0x8a19d8e4f3d2a8355b5ef7cbf9691c76ce63b3ff2f6c1cdfa01946437fba1ad4",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "SepoliaConfigUpgradeable",
+            "src": "contracts/fhevm/SepoliaConfigUpgradeable.sol:23"
+          },
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "50",
+            "type": "t_mapping(t_address,t_struct(User)40534_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:62"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10049_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)9989_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)40514_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_array(t_userDefinedValueType(euint256)41754)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)40534_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)40497_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)41754)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)40514_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)40497_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)41722",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_struct(Notifier)40489_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)40534_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)40489_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)40514_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)41722": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)41754": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "9502e67262a7d9146b994b390bb5c07de69b6607574dccee8b6a47577f332e89": {
+      "address": "0x4820eB6f6601Cc9F71ab8Ffb27676A21a0219AFa",
+      "txHash": "0x77b2f751a221f903dc089ed1dd843a9c0e421c48248783b4aefe360c65a89904",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "SepoliaConfigUpgradeable",
+            "src": "contracts/fhevm/SepoliaConfigUpgradeable.sol:23"
+          },
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "50",
+            "type": "t_mapping(t_address,t_struct(User)40534_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:68"
+          },
+          {
+            "label": "totalUsers",
+            "offset": 0,
+            "slot": "51",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:72"
+          },
+          {
+            "label": "totalMessages",
+            "offset": 8,
+            "slot": "51",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:73"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10049_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)9989_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)40514_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_array(t_userDefinedValueType(euint256)41780)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)40534_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)40497_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)41780)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)40514_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)40497_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)41748",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_struct(Notifier)40489_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)40534_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)40489_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)40514_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)41748": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)41780": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "22015a22832615a581a75559203bae76f1ad5b30954e359319fb444f2fa0c5cf": {
+      "address": "0x4DCCb870bd6a19690Eb96727836F1DD9ba341B72",
+      "txHash": "0x6694d2098b46d7d4c18d6ba8b6e09766eec91289a6631204f4ce05390299f79c",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_struct(User)42619_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:54"
+          },
+          {
+            "label": "totalUsers",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:57"
+          },
+          {
+            "label": "totalMessages",
+            "offset": 8,
+            "slot": "1",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:58"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10240_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)10180_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)42599_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_userDefinedValueType(euint256)43855)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)42619_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)42582_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)43855)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)42599_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)42582_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)43823",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_struct(Notifier)42574_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)42619_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)42574_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)42599_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)43823": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)43855": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "bf49ea62bf6b337a96b9b2e44300b1442a5315f2d241864bbaf4ae949306f505": {
+      "address": "0x6549f181bF34fC98e6b0b89D05a6Ba010329eC98",
+      "txHash": "0xec70c4be304e4f40877b5f9f15ff0e5dbaff2c203518fa756f52d12c8f7c8bed",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_struct(User)42621_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:55"
+          },
+          {
+            "label": "totalUsers",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:58"
+          },
+          {
+            "label": "totalMessages",
+            "offset": 8,
+            "slot": "1",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:59"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10240_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)10180_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)42601_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_userDefinedValueType(euint256)44051)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)42621_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)42582_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)44051)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)42601_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)42582_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)44019",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "deleted",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "6"
+              }
+            ],
+            "numberOfBytes": "224"
+          },
+          "t_struct(Notifier)42574_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)42621_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)42574_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)42601_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)44019": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)44051": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_bytes32": {
+            "label": "bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "d361041703dbee309dc350bc262a9e9070c72517909bb246188bbaa3e225c589": {
+      "address": "0x0048AD03F40f0832A645531a818201fC9Bd56eec",
+      "txHash": "0x1be47ffe06e312626257628fbcdaf0a839cf8583ee7b589e74fbc76a9a7a2481",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_struct(User)42621_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:55"
+          },
+          {
+            "label": "messageHashes",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_bytes32,t_bool)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:58"
+          },
+          {
+            "label": "totalUsers",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:61"
+          },
+          {
+            "label": "totalMessages",
+            "offset": 8,
+            "slot": "2",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:62"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10240_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)10180_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Message)42601_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_userDefinedValueType(euint256)43964)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)42621_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_bool)": {
+            "label": "mapping(bytes32 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(EncryptedString)42582_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)43964)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Message)42601_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)42582_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)43932",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "hash",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "6"
+              }
+            ],
+            "numberOfBytes": "224"
+          },
+          "t_struct(Notifier)42574_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)42621_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)42574_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)42601_storage)dyn_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)43932": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)43964": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "aecdbecffd250c7f517501773ab4efcb9db38e82df89b68fbe2a9ea5c0ac0abb": {
+      "address": "0x51267d163D48D38A427fDAe3670B817e8F66E629",
+      "txHash": "0xb040a07af006c701264a11dce3a7c996b2bdb04ebdac2cbfd8537ef582026d1c",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_struct(User)42648_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:80"
+          },
+          {
+            "label": "councils",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_address,t_array(t_struct(CouncilMember)42613_storage)dyn_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:81"
+          },
+          {
+            "label": "councilMembers",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_bool))",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:82"
+          },
+          {
+            "label": "extensionVotes",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_struct(ExtensionVote)42626_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:83"
+          },
+          {
+            "label": "rewardsClaimed",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_bytes32,t_bool)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:84"
+          },
+          {
+            "label": "messageHashes",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_mapping(t_bytes32,t_bool)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:87"
+          },
+          {
+            "label": "totalUsers",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:90"
+          },
+          {
+            "label": "totalMessages",
+            "offset": 8,
+            "slot": "6",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:91"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:94"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10240_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)10180_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(CouncilMember)42613_storage)dyn_storage": {
+            "label": "struct Farewell.CouncilMember[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_struct(Message)42604_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_array(t_userDefinedValueType(euint256)45344)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_array(t_struct(CouncilMember)42613_storage)dyn_storage)": {
+            "label": "mapping(address => struct Farewell.CouncilMember[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_bool))": {
+            "label": "mapping(address => mapping(address => bool))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(ExtensionVote)42626_storage)": {
+            "label": "mapping(address => struct Farewell.ExtensionVote)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)42648_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_bool)": {
+            "label": "mapping(bytes32 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(CouncilMember)42613_storage": {
+            "label": "struct Farewell.CouncilMember",
+            "members": [
+              {
+                "label": "member",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "stake",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "joinedAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "active",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(EncryptedString)42582_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)45344)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(ExtensionVote)42626_storage": {
+            "label": "struct Farewell.ExtensionVote",
+            "members": [
+              {
+                "label": "extensionSeconds",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "deadline",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "0"
+              },
+              {
+                "label": "votes",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "voteCount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "executed",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "3"
+              }
+            ],
+            "numberOfBytes": "128"
+          },
+          "t_struct(Message)42604_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)42582_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)45312",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "hash",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "revoked",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "7"
+              }
+            ],
+            "numberOfBytes": "256"
+          },
+          "t_struct(Notifier)42574_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)42648_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)42574_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "deposit",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)42604_storage)dyn_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)45312": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)45344": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "45496c84a04b1e17b167754a8e65da6b3d855090dd4435b0e6181abd1c74e2dc": {
+      "address": "0x9f2814e7a9a9e85A1E53229dAd058E7d72b566cB",
+      "txHash": "0x7002a2786d67d6b5876e1f012dbf37c45bef3e4a12a3b2e0f8c356ce3303b0d3",
+      "layout": {
+        "solcVersion": "0.8.27",
+        "storage": [
+          {
+            "label": "users",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_struct(User)42648_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:80"
+          },
+          {
+            "label": "councils",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_address,t_array(t_struct(CouncilMember)42613_storage)dyn_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:81"
+          },
+          {
+            "label": "councilMembers",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_bool))",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:82"
+          },
+          {
+            "label": "extensionVotes",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_struct(ExtensionVote)42626_storage)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:83"
+          },
+          {
+            "label": "rewardsClaimed",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_bytes32,t_bool)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:84"
+          },
+          {
+            "label": "messageHashes",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_mapping(t_bytes32,t_bool)",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:87"
+          },
+          {
+            "label": "totalUsers",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:90"
+          },
+          {
+            "label": "totalMessages",
+            "offset": 8,
+            "slot": "6",
+            "type": "t_uint64",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:91"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "Farewell",
+            "src": "contracts/Farewell.sol:94"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)10240_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)10180_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(CouncilMember)42613_storage)dyn_storage": {
+            "label": "struct Farewell.CouncilMember[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_struct(Message)42604_storage)dyn_storage": {
+            "label": "struct Farewell.Message[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_array(t_userDefinedValueType(euint256)45344)dyn_storage": {
+            "label": "euint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_bytes_storage": {
+            "label": "bytes",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_array(t_struct(CouncilMember)42613_storage)dyn_storage)": {
+            "label": "mapping(address => struct Farewell.CouncilMember[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_bool))": {
+            "label": "mapping(address => mapping(address => bool))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(ExtensionVote)42626_storage)": {
+            "label": "mapping(address => struct Farewell.ExtensionVote)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(User)42648_storage)": {
+            "label": "mapping(address => struct Farewell.User)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_bool)": {
+            "label": "mapping(bytes32 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(CouncilMember)42613_storage": {
+            "label": "struct Farewell.CouncilMember",
+            "members": [
+              {
+                "label": "member",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "stake",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "joinedAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "active",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(EncryptedString)42582_storage": {
+            "label": "struct Farewell.EncryptedString",
+            "members": [
+              {
+                "label": "limbs",
+                "type": "t_array(t_userDefinedValueType(euint256)45344)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "byteLen",
+                "type": "t_uint32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(ExtensionVote)42626_storage": {
+            "label": "struct Farewell.ExtensionVote",
+            "members": [
+              {
+                "label": "extensionSeconds",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "deadline",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "0"
+              },
+              {
+                "label": "votes",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "voteCount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "executed",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "3"
+              }
+            ],
+            "numberOfBytes": "128"
+          },
+          "t_struct(Message)42604_storage": {
+            "label": "struct Farewell.Message",
+            "members": [
+              {
+                "label": "recipientEmail",
+                "type": "t_struct(EncryptedString)42582_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_skShare",
+                "type": "t_userDefinedValueType(euint128)45312",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "payload",
+                "type": "t_bytes_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "4"
+              },
+              {
+                "label": "claimedBy",
+                "type": "t_address",
+                "offset": 9,
+                "slot": "4"
+              },
+              {
+                "label": "publicMessage",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "hash",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "revoked",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "7"
+              }
+            ],
+            "numberOfBytes": "256"
+          },
+          "t_struct(Notifier)42574_storage": {
+            "label": "struct Farewell.Notifier",
+            "members": [
+              {
+                "label": "notificationTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "notifierAddress",
+                "type": "t_address",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(User)42648_storage": {
+            "label": "struct Farewell.User",
+            "members": [
+              {
+                "label": "name",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "checkInPeriod",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "gracePeriod",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "1"
+              },
+              {
+                "label": "lastCheckIn",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "registeredOn",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "1"
+              },
+              {
+                "label": "deceased",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "notifier",
+                "type": "t_struct(Notifier)42574_storage",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "deposit",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "messages",
+                "type": "t_array(t_struct(Message)42604_storage)dyn_storage",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_userDefinedValueType(euint128)45312": {
+            "label": "euint128",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          },
+          "t_userDefinedValueType(euint256)45344": {
+            "label": "euint256",
+            "numberOfBytes": "32",
+            "underlying": "t_bytes32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

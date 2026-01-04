@@ -171,10 +171,10 @@ describe("Farewell", function () {
     }
   });
 
-  it("anyone should be able to claim a message of a dead user but only after the exclusivity period", async function () {
+    it("anyone should be able to claim a message of a dead user but only after the exclusivity period", async function () {
     // Register
-    const checkInPeriod = 1;
-    const gracePeriod = 1;
+    const checkInPeriod = 86400; // 1 day in seconds
+    const gracePeriod = 86400; // 1 day in seconds
     let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
     await tx.wait();
 
@@ -325,7 +325,7 @@ describe("Farewell", function () {
       const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
         "Charlie",
         86400n, // 1 day check-in
-        3600n   // 1 hour grace
+        86400n   // 1 day grace (minimum)
       );
       await tx.wait();
 
@@ -340,7 +340,7 @@ describe("Farewell", function () {
     });
   });
 
-  describe("removeMessage", function () {
+  describe("revokeMessage", function () {
     it("should allow owner to remove their own unclaimed message", async function () {
       // Register
       let tx = await FarewellContract.connect(signers.owner).register();
@@ -368,18 +368,18 @@ describe("Farewell", function () {
       let n = await FarewellContract.messageCount(signers.owner.address);
       expect(n).to.eq(1);
 
-      // Remove the message
-      tx = await FarewellContract.connect(signers.owner).removeMessage(0);
+      // Revoke the message
+      tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
       await tx.wait();
 
-      // Message count should still be 1 (message is marked as deleted, not removed)
+      // Message count should still be 1 (message is marked as revoked, not removed)
       n = await FarewellContract.messageCount(signers.owner.address);
       expect(n).to.eq(1);
 
       // Trying to retrieve should fail
       await expect(
         FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0)
-      ).to.be.revertedWith("message was deleted");
+      ).to.be.revertedWith("message was revoked");
     });
 
     it("should not allow removing an already deleted message", async function () {
@@ -406,20 +406,20 @@ describe("Farewell", function () {
       );
       await tx.wait();
 
-      // Remove the message
-      tx = await FarewellContract.connect(signers.owner).removeMessage(0);
+      // Revoke the message
+      tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
       await tx.wait();
 
-      // Try to remove again
+      // Try to revoke again
       await expect(
-        FarewellContract.connect(signers.owner).removeMessage(0)
-      ).to.be.revertedWith("already deleted");
+        FarewellContract.connect(signers.owner).revokeMessage(0)
+      ).to.be.revertedWith("already revoked");
     });
 
     it("should not allow removing a claimed message", async function () {
       // Register with short periods
-      const checkInPeriod = 1;
-      const gracePeriod = 1;
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
@@ -453,10 +453,10 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
       await tx.wait();
 
-      // Try to remove the claimed message (should fail)
+      // Try to revoke the claimed message (should fail)
       await expect(
-        FarewellContract.connect(signers.owner).removeMessage(0)
-      ).to.be.revertedWith("cannot delete claimed message");
+        FarewellContract.connect(signers.owner).revokeMessage(0)
+      ).to.be.revertedWith("cannot revoke claimed message");
     });
 
     it("should not allow non-owner to remove message", async function () {
@@ -483,9 +483,9 @@ describe("Farewell", function () {
       );
       await tx.wait();
 
-      // Alice tries to remove owner's message
+      // Alice tries to revoke owner's message
       await expect(
-        FarewellContract.connect(signers.alice).removeMessage(0)
+        FarewellContract.connect(signers.alice).revokeMessage(0)
       ).to.be.revertedWith("not registered");
     });
 
@@ -548,8 +548,8 @@ describe("Farewell", function () {
       let n = await FarewellContract.messageCount(signers.owner.address);
       expect(n).to.eq(3);
 
-      // Remove message 1 (middle one)
-      tx = await FarewellContract.connect(signers.owner).removeMessage(1);
+      // Revoke message 1 (middle one)
+      tx = await FarewellContract.connect(signers.owner).revokeMessage(1);
       await tx.wait();
 
       // Message count should still be 3
@@ -560,10 +560,10 @@ describe("Farewell", function () {
       const msg0 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
       expect(ethers.toUtf8String(msg0.payload)).to.equal(payload1);
 
-      // Message 1 should be deleted
+      // Message 1 should be revoked
       await expect(
         FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 1)
-      ).to.be.revertedWith("message was deleted");
+      ).to.be.revertedWith("message was revoked");
 
       // Message 2 should still be accessible
       const msg2 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 2);
@@ -595,8 +595,8 @@ describe("Farewell", function () {
 
     it("should reject claim with invalid index (out of bounds)", async function () {
       // Register and mark deceased
-      const checkInPeriod = 1;
-      const gracePeriod = 1;
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
@@ -699,6 +699,703 @@ describe("Farewell", function () {
           encrypted.inputProof
         )
       ).to.be.revertedWith("email too long");
+    });
+  });
+
+  describe("Council System", function () {
+    it("should allow adding council member without stake", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
+      await tx.wait();
+
+      const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
+      expect(members.length).to.eq(1);
+      expect(members[0]).to.eq(signers.alice.address);
+    });
+
+    it("should allow adding unlimited council members (no size limit)", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add 10 members (previously max was 5)
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 10; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
+      expect(members.length).to.eq(10);
+    });
+
+    it("should allow removing council member", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add member
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
+      await tx.wait();
+
+      // Remove member
+      tx = await FarewellContract.connect(signers.owner).removeCouncilMember(signers.alice.address);
+      await tx.wait();
+
+      const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
+      expect(members.length).to.eq(0);
+    });
+
+    it("should track reverse index for council members", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      tx = await FarewellContract.connect(signers.alice)["register()"]();
+      await tx.wait();
+
+      // Add bob as council member for both owner and alice
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.bob.address);
+      await tx.wait();
+
+      tx = await FarewellContract.connect(signers.alice).addCouncilMember(signers.bob.address);
+      await tx.wait();
+
+      // Check reverse index
+      const usersForBob = await FarewellContract.getUsersForCouncilMember(signers.bob.address);
+      expect(usersForBob.length).to.eq(2);
+      expect(usersForBob).to.include(signers.owner.address);
+      expect(usersForBob).to.include(signers.alice.address);
+    });
+
+    it("should return correct user state", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Initially should be Alive (status 0)
+      let [status, graceSecondsLeft] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(0); // Alive
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      [status, graceSecondsLeft] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(1); // Grace
+      expect(graceSecondsLeft).to.be.gt(0);
+
+      // Advance past grace period
+      await ethers.provider.send("evm_increaseTime", [gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      [status, graceSecondsLeft] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(2); // Deceased (past grace, not yet marked)
+    });
+
+    it("should allow council to vote during grace period", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add council member
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
+      await tx.wait();
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Alice votes that owner is alive
+      tx = await FarewellContract.connect(signers.alice).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+
+      // Check vote was recorded
+      const [hasVoted, votedAlive] = await FarewellContract.getGraceVote(signers.owner.address, signers.alice.address);
+      expect(hasVoted).to.eq(true);
+      expect(votedAlive).to.eq(true);
+    });
+
+    it("should reject voting outside grace period", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add council member
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
+      await tx.wait();
+
+      // Try to vote before grace period (should fail)
+      await expect(
+        FarewellContract.connect(signers.alice).voteOnStatus(signers.owner.address, true)
+      ).to.be.revertedWith("not in grace period");
+    });
+
+    it("should mark user as alive with majority vote and prevent future deceased status", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add 3 council members
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 3; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Majority (2 out of 3) vote alive
+      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+      tx = await FarewellContract.connect(allSigners[2]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+
+      // Check user is now FinalAlive (status 3)
+      const [status] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(3); // FinalAlive
+
+      // Advance past grace period and try to mark deceased (should fail)
+      await ethers.provider.send("evm_increaseTime", [gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(
+        FarewellContract.connect(signers.alice).markDeceased(signers.owner.address)
+      ).to.be.revertedWith("user voted alive by council");
+    });
+
+    it("should mark user as deceased with majority dead vote", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add 3 council members
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 3; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Majority (2 out of 3) vote dead
+      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, false);
+      await tx.wait();
+      tx = await FarewellContract.connect(allSigners[2]).voteOnStatus(signers.owner.address, false);
+      await tx.wait();
+
+      // Check user is now Deceased (status 2)
+      const [status] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(2); // Deceased
+
+      // Verify deceased status
+      const isDeceased = await FarewellContract.getDeceasedStatus(signers.owner.address);
+      expect(isDeceased).to.eq(true);
+    });
+
+    it("should prevent voting after decision is made", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add 3 council members
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 3; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Majority vote alive
+      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+      tx = await FarewellContract.connect(allSigners[2]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+
+      // Third member tries to vote (should fail - already decided)
+      await expect(
+        FarewellContract.connect(allSigners[3]).voteOnStatus(signers.owner.address, false)
+      ).to.be.revertedWith("status already finalized");
+    });
+
+    it("should prevent claiming revoked messages", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add and revoke message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
+      await tx.wait();
+
+      // Advance time and mark deceased
+      await ethers.provider.send("evm_increaseTime", [2]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Try to claim revoked message (should fail)
+      await expect(
+        FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)
+      ).to.be.revertedWith("message was revoked");
+    });
+  });
+
+  describe("Message Editing", function () {
+    it("should allow editing message before deceased", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Edit message
+      const newPayload = toBytes("updated payload");
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords2) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      tx = await FarewellContract.connect(signers.owner).editMessage(
+        0,
+        encrypted2.handles.slice(0, nLimbs),
+        emailBytes2.length,
+        encrypted2.handles[nLimbs],
+        newPayload,
+        encrypted2.inputProof,
+        "Updated message"
+      );
+      await tx.wait();
+
+      // Verify message was updated
+      const msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      expect(ethers.toUtf8String(msg.payload)).to.equal("updated payload");
+      expect(msg.publicMessage).to.equal("Updated message");
+    });
+
+    it("should not allow editing message after deceased", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Try to edit (should fail)
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords2) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      await expect(
+        FarewellContract.connect(signers.owner).editMessage(
+          0,
+          encrypted2.handles.slice(0, nLimbs),
+          emailBytes2.length,
+          encrypted2.handles[nLimbs],
+          payloadBytes2,
+          encrypted2.inputProof,
+          ""
+        )
+      ).to.be.revertedWith("user is deceased");
+    });
+
+    it("should not allow editing claimed message", async function () {
+      const checkInPeriod = 1;
+      const gracePeriod = 1;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message, mark deceased, and claim
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Try to edit (should fail)
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords2) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      await expect(
+        FarewellContract.connect(signers.owner).editMessage(
+          0,
+          encrypted2.handles.slice(0, nLimbs),
+          emailBytes2.length,
+          encrypted2.handles[nLimbs],
+          payloadBytes2,
+          encrypted2.inputProof,
+          ""
+        )
+      ).to.be.revertedWith("cannot edit claimed message");
+    });
+  });
+
+  describe("Deposits and Rewards", function () {
+    it("should allow user to deposit ETH", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      const depositAmount = ethers.parseEther("1.0");
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: depositAmount });
+      await tx.wait();
+
+      const deposit = await FarewellContract.getDeposit(signers.owner.address);
+      expect(deposit).to.eq(depositAmount);
+    });
+
+    it("should calculate reward correctly", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Deposit
+      const depositAmount = ethers.parseEther("1.0");
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: depositAmount });
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Calculate reward
+      const reward = await FarewellContract.calculateReward(signers.owner.address, 0);
+      // Base reward is 0.01 ETH, payload is small so should be close to base
+      expect(reward).to.be.gte(ethers.parseEther("0.01"));
+    });
+
+    it("should allow claiming reward with proof", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Deposit
+      const depositAmount = ethers.parseEther("1.0");
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: depositAmount });
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Mark deceased and claim
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Claim reward
+      const proof = "0x" + Buffer.from("mock proof").toString("hex");
+      const balanceBefore = await ethers.provider.getBalance(signers.alice.address);
+      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof);
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
+
+      // Check reward was transferred (accounting for gas)
+      const reward = await FarewellContract.calculateReward(signers.owner.address, 0);
+      expect(balanceAfter + gasUsed - balanceBefore).to.be.gte(reward);
+    });
+
+    it("should prevent double claiming of reward", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Deposit, add message, mark deceased, claim
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: ethers.parseEther("1.0") });
+      await tx.wait();
+
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Claim reward first time
+      const proof = "0x" + Buffer.from("mock proof").toString("hex");
+      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof);
+      await tx.wait();
+
+      // Try to claim again (should fail)
+      await expect(
+        FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof)
+      ).to.be.revertedWith("reward already claimed");
+    });
+  });
+
+  describe("Integration Tests", function () {
+    it("should complete full flow: register → add message → deposit → mark deceased → claim → submit proof → receive reward", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      
+      // Register
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Test User", checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Deposit
+      const depositAmount = ethers.parseEther("1.0");
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: depositAmount });
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "Test message"
+      );
+      await tx.wait();
+
+      // Advance time and mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Claim message
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Submit proof and claim reward
+      const proof = "0x" + Buffer.from("zk.email proof").toString("hex");
+      const balanceBefore = await ethers.provider.getBalance(signers.alice.address);
+      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof);
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
+
+      // Verify reward was received
+      const reward = await FarewellContract.calculateReward(signers.owner.address, 0);
+      expect(balanceAfter + gasUsed - balanceBefore).to.be.gte(reward);
+
+      // Verify deposit was reduced
+      const remainingDeposit = await FarewellContract.getDeposit(signers.owner.address);
+      expect(remainingDeposit).to.eq(depositAmount - reward);
+    });
+
+    it("should complete council voting flow: add members → enter grace → vote alive → user saved", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+
+      // Register
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      const initialCheckIn = await FarewellContract.getLastCheckIn(signers.owner.address);
+
+      // Add 3 council members
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 3; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      // Advance time to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Majority vote alive (2 out of 3)
+      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+      tx = await FarewellContract.connect(allSigners[2]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+
+      // Verify user was saved (lastCheckIn updated)
+      const newCheckIn = await FarewellContract.getLastCheckIn(signers.owner.address);
+      expect(newCheckIn).to.be.gt(initialCheckIn);
+
+      // Verify user is FinalAlive and cannot be marked deceased
+      const [status] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(3); // FinalAlive
+    });
+
+    it("should complete message lifecycle: add → edit → revoke → cannot claim", async function () {
+      // Register
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "Original message"
+      );
+      await tx.wait();
+
+      // Edit message
+      const newPayload = toBytes("edited payload");
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords2) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      tx = await FarewellContract.connect(signers.owner).editMessage(
+        0,
+        encrypted2.handles.slice(0, nLimbs),
+        emailBytes2.length,
+        encrypted2.handles[nLimbs],
+        newPayload,
+        encrypted2.inputProof,
+        "Edited message"
+      );
+      await tx.wait();
+
+      // Verify edit
+      let msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      expect(ethers.toUtf8String(msg.payload)).to.equal("edited payload");
+      expect(msg.publicMessage).to.equal("Edited message");
+
+      // Revoke message
+      tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
+      await tx.wait();
+
+      // Mark deceased
+      await ethers.provider.send("evm_increaseTime", [2]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Cannot claim revoked message
+      await expect(
+        FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)
+      ).to.be.revertedWith("message was revoked");
     });
   });
 });
