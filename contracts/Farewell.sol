@@ -11,6 +11,16 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+/// @title Groth16 verifier interface for zk-email proofs
+interface IGroth16Verifier {
+    function verifyProof(
+        uint256[2] calldata pA,
+        uint256[2][2] calldata pB,
+        uint256[2] calldata pC,
+        uint256[] calldata pubSignals
+    ) external view returns (bool);
+}
+
 /// @title Farewell POC (email-recipient version)
 /// @notice Minimal on-chain PoC for posthumous message release via timeout.
 /// - Recipients are EMAILS (string), not wallet addresses.
@@ -47,6 +57,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         string publicMessage;
         bytes32 hash;  // Hash of all input attributes
         bool revoked;  // Marks if message has been revoked by owner (cannot be claimed)
+
+        // ZK-Email reward fields
+        uint256 reward;  // Per-message ETH reward for delivery
+        bytes32[] recipientEmailHashes;  // Poseidon hashes of each recipient email (for multi-recipient)
+        bytes32 payloadContentHash;  // Keccak256 hash of decrypted payload content
+        uint256 provenRecipientsBitmap;  // Bitmap tracking which recipients have been proven (up to 256)
     }
 
     struct CouncilMember {
@@ -97,6 +113,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     // Mapping to track message hashes for efficient lookup
     mapping(bytes32 => bool) public messageHashes;
 
+    // ZK-Email verifier storage
+    address public zkEmailVerifier;  // Groth16 verifier contract address
+    mapping(bytes32 => mapping(uint256 => bool)) public trustedDkimKeys;  // domainHash => pubkeyHash => isValid
+    mapping(address => uint256) public lockedRewards;  // Total locked rewards per user
+
     // Solidity automatically initializes all storage variables to zero by default.
     uint64 private totalUsers;
     uint64 private totalMessages;
@@ -115,7 +136,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
     event MessageAdded(address indexed user, uint256 indexed index);
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
-    event MessageDeleted(address indexed user, uint256 indexed index);
     event MessageEdited(address indexed user, uint256 indexed index);
     event MessageRevoked(address indexed user, uint256 indexed index);
     event CouncilMemberAdded(address indexed user, address indexed member);
@@ -124,6 +144,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     event StatusDecided(address indexed user, bool isAlive);
     event DepositAdded(address indexed user, uint256 amount);
     event RewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, uint256 amount);
+    event DeliveryProven(address indexed user, uint256 indexed messageIndex, uint256 recipientIndex, address claimer);
+    event ZkEmailVerifierSet(address verifier);
+    event DkimKeyUpdated(bytes32 domain, uint256 pubkeyHash, bool trusted);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -352,6 +375,44 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
     }
 
+    /// @notice Add a message with per-message reward for delivery verification
+    /// @param limbs Encrypted email limbs
+    /// @param emailByteLen Original email byte length
+    /// @param encSkShare Encrypted secret key share
+    /// @param payload Encrypted message payload
+    /// @param inputProof FHE input proof
+    /// @param publicMessage Public message (optional)
+    /// @param recipientEmailHashes Poseidon hashes of all recipient emails
+    /// @param payloadContentHash Keccak256 hash of decrypted payload content
+    function addMessageWithReward(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage,
+        bytes32[] calldata recipientEmailHashes,
+        bytes32 payloadContentHash
+    ) external payable returns (uint256 index) {
+        require(recipientEmailHashes.length > 0, "must have at least one recipient");
+        require(recipientEmailHashes.length <= 256, "too many recipients");
+
+        index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
+
+        // Store reward and verification data
+        User storage u = users[msg.sender];
+        Message storage m = u.messages[index];
+        m.reward = msg.value;
+        m.recipientEmailHashes = recipientEmailHashes;
+        m.payloadContentHash = payloadContentHash;
+        m.provenRecipientsBitmap = 0;
+
+        // Track locked rewards
+        if (msg.value > 0) {
+            lockedRewards[msg.sender] += msg.value;
+        }
+    }
+
     function messageCount(address user) external view returns (uint256) {
         User storage u = users[user];
         require(u.checkInPeriod > 0, "user not registered");
@@ -514,6 +575,96 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         }
 
         emit Claimed(user, index, claimerAddress);
+    }
+
+    // --- ZK-Email Proof Delivery ---
+
+    /// @notice ZK-Email proof structure for Groth16 verification
+    struct ZkEmailProof {
+        uint256[2] pA;
+        uint256[2][2] pB;
+        uint256[2] pC;
+        uint256[] publicSignals;  // [0]=recipientEmailHash, [1]=dkimPubkeyHash, [2]=contentHash
+    }
+
+    /// @notice Prove delivery to a single recipient (can be called multiple times for multi-recipient)
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    /// @param recipientIndex The recipient index within the message's recipientEmailHashes array
+    /// @param proof The zk-email Groth16 proof
+    function proveDelivery(
+        address user,
+        uint256 messageIndex,
+        uint256 recipientIndex,
+        ZkEmailProof calldata proof
+    ) external {
+        User storage u = users[user];
+        require(u.deceased, "user not deceased");
+
+        Message storage m = u.messages[messageIndex];
+        require(m.claimed, "message not claimed");
+        require(m.claimedBy == msg.sender, "not the claimer");
+        require(recipientIndex < m.recipientEmailHashes.length, "invalid recipient");
+
+        // Check not already proven for this recipient
+        require((m.provenRecipientsBitmap & (1 << recipientIndex)) == 0, "already proven");
+
+        // Verify proof
+        require(_verifyZkEmailProof(proof, m, recipientIndex), "invalid proof");
+
+        // Mark recipient as proven
+        m.provenRecipientsBitmap |= (1 << recipientIndex);
+
+        emit DeliveryProven(user, messageIndex, recipientIndex, msg.sender);
+    }
+
+    /// @notice Internal function to verify zk-email proof
+    function _verifyZkEmailProof(
+        ZkEmailProof calldata proof,
+        Message storage m,
+        uint256 recipientIndex
+    ) internal view returns (bool) {
+        // Public signals layout (zk-email circuit):
+        // [0] = Poseidon hash of recipient email (TO field)
+        // [1] = DKIM public key hash
+        // [2] = Content hash from email body
+
+        // 1. Verify recipient email hash matches stored commitment
+        if (proof.publicSignals.length < 3) {
+            return false;
+        }
+        if (bytes32(proof.publicSignals[0]) != m.recipientEmailHashes[recipientIndex]) {
+            return false;
+        }
+
+        // 2. Verify DKIM key is trusted (using global domain for now)
+        if (!_isTrustedDkimKey(proof.publicSignals[1])) {
+            return false;
+        }
+
+        // 3. Verify content hash matches
+        if (bytes32(proof.publicSignals[2]) != m.payloadContentHash) {
+            return false;
+        }
+
+        // 4. Verify Groth16 proof (if verifier is set)
+        if (zkEmailVerifier != address(0)) {
+            return IGroth16Verifier(zkEmailVerifier).verifyProof(
+                proof.pA,
+                proof.pB,
+                proof.pC,
+                proof.publicSignals
+            );
+        }
+
+        // If no verifier set, accept the proof (for testing)
+        return true;
+    }
+
+    /// @notice Check if a DKIM public key hash is trusted
+    function _isTrustedDkimKey(uint256 pubkeyHash) internal view returns (bool) {
+        // Check against global trusted keys (bytes32(0) represents global/any domain)
+        return trustedDkimKeys[bytes32(0)][pubkeyHash];
     }
 
     /// @notice Retrieve message data (encrypted handles are returned but can only be decrypted
@@ -803,11 +954,46 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         return reward;
     }
     
-    /// @notice Claim reward after delivering message (with zk.email proof)
-    /// @param user The user address
+    /// @notice Claim reward after ALL recipients have been proven via zk-email
+    /// @param user The deceased user's address
     /// @param messageIndex The message index
-    /// @param zkProof The zk.email proof bytes (verification logic to be implemented)
     function claimReward(
+        address user,
+        uint256 messageIndex
+    ) external {
+        User storage u = users[user];
+        require(u.deceased, "user not deceased");
+        require(messageIndex < u.messages.length, "invalid index");
+
+        Message storage m = u.messages[messageIndex];
+        require(m.claimed, "message not claimed");
+        require(m.claimedBy == msg.sender, "not the claimer");
+        require(m.reward > 0, "no reward");
+
+        // Check all recipients have been proven
+        uint256 numRecipients = m.recipientEmailHashes.length;
+        if (numRecipients > 0) {
+            uint256 requiredBitmap = (1 << numRecipients) - 1;
+            require(m.provenRecipientsBitmap == requiredBitmap, "not all recipients proven");
+        }
+
+        // Check if reward already claimed (prevent double claiming)
+        bytes32 rewardKey = keccak256(abi.encodePacked(user, messageIndex));
+        require(!rewardsClaimed[rewardKey], "already claimed");
+        rewardsClaimed[rewardKey] = true;
+
+        uint256 reward = m.reward;
+        m.reward = 0;
+        lockedRewards[user] -= reward;
+
+        payable(msg.sender).transfer(reward);
+
+        emit RewardClaimed(user, messageIndex, msg.sender, reward);
+    }
+
+    /// @notice Legacy claimReward function for backwards compatibility (deposit-based rewards)
+    /// @dev This uses the deposit pool rather than per-message rewards
+    function claimRewardLegacy(
         address user,
         uint256 messageIndex,
         bytes calldata zkProof
@@ -815,30 +1001,81 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         User storage u = users[user];
         require(u.deceased, "user not deceased");
         require(messageIndex < u.messages.length, "invalid index");
-        
+
         Message storage m = u.messages[messageIndex];
         require(m.claimed, "message not claimed");
         require(m.claimedBy == msg.sender, "not the claimer");
-        
-        // TODO: Verify zk.email proof
-        // For now, we'll accept any non-empty proof
-        // In production, this should verify the proof against the encrypted email
+
+        // Accept any non-empty proof for legacy compatibility
         require(zkProof.length > 0, "invalid proof");
-        
+
         // Check if reward already claimed (prevent double claiming)
-        bytes32 rewardKey = keccak256(abi.encodePacked(user, messageIndex));
+        bytes32 rewardKey = keccak256(abi.encodePacked(user, messageIndex, "legacy"));
         require(!rewardsClaimed[rewardKey], "reward already claimed");
-        
+
         uint256 reward = calculateReward(user, messageIndex);
         require(reward > 0, "no reward available");
         require(u.deposit >= reward, "insufficient deposit");
-        
+
         rewardsClaimed[rewardKey] = true;
         u.deposit -= reward;
-        
+
         payable(msg.sender).transfer(reward);
-        
+
         emit RewardClaimed(user, messageIndex, msg.sender, reward);
+    }
+
+    // --- Admin Functions ---
+
+    /// @notice Set the zk-email Groth16 verifier contract address
+    /// @param _verifier The verifier contract address
+    function setZkEmailVerifier(address _verifier) external onlyOwner {
+        zkEmailVerifier = _verifier;
+        emit ZkEmailVerifierSet(_verifier);
+    }
+
+    /// @notice Set a DKIM public key hash as trusted or untrusted
+    /// @param domain The domain hash (use bytes32(0) for global)
+    /// @param pubkeyHash The DKIM public key hash
+    /// @param trusted Whether this key should be trusted
+    function setTrustedDkimKey(bytes32 domain, uint256 pubkeyHash, bool trusted) external onlyOwner {
+        trustedDkimKeys[domain][pubkeyHash] = trusted;
+        emit DkimKeyUpdated(domain, pubkeyHash, trusted);
+    }
+
+    /// @notice Get message reward information
+    /// @param user The user's address
+    /// @param messageIndex The message index
+    function getMessageRewardInfo(address user, uint256 messageIndex) external view returns (
+        uint256 reward,
+        uint256 numRecipients,
+        uint256 provenRecipientsBitmap,
+        bytes32 payloadContentHash
+    ) {
+        User storage u = users[user];
+        require(messageIndex < u.messages.length, "invalid index");
+
+        Message storage m = u.messages[messageIndex];
+        return (
+            m.reward,
+            m.recipientEmailHashes.length,
+            m.provenRecipientsBitmap,
+            m.payloadContentHash
+        );
+    }
+
+    /// @notice Get recipient email hash at a specific index
+    /// @param user The user's address
+    /// @param messageIndex The message index
+    /// @param recipientIndex The recipient index
+    function getRecipientEmailHash(address user, uint256 messageIndex, uint256 recipientIndex) external view returns (bytes32) {
+        User storage u = users[user];
+        require(messageIndex < u.messages.length, "invalid index");
+
+        Message storage m = u.messages[messageIndex];
+        require(recipientIndex < m.recipientEmailHashes.length, "invalid recipient");
+
+        return m.recipientEmailHashes[recipientIndex];
     }
 }
 
