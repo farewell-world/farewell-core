@@ -6,7 +6,7 @@ It uses **smart contracts** built on top of the [fhevm](https://github.com/zama-
 
 Because it is deployed as a smart contract on Ethereum, **Farewell inherits the reliability and persistence of decentralized infrastructure**. This means the system is designed so that it will keep functioning for decades without depending on a single server or authority, and messages cannot be lost or tampered with once stored.
 
-We have a **live demo** as [proof of concept](https://www.iampedro.com/farewell) running on Sepolia.
+We have a **live demo** as [proof of concept](https://farewell.world) running on Sepolia.
 
 ---
 
