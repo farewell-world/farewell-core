@@ -30,19 +30,25 @@ We have a **live demo** as [proof of concept](https://www.iampedro.com/farewell)
         
     - A private share of the user’s decryption key (also stored as an `euint`)
         
-- **Delivery mechanism**:  
+- **Delivery mechanism**:
     After the user is flagged as deceased:
-    
+
     - Anyone may call `claim()` to mark a message as ready for release. The address that initially marked the user as deceased has a 24-hour priority window for claiming a message.
-        
+
     - Recipients (or external services) can then call `retrieve()` (view) to obtain a **DeliveryPackage** containing:
-        
-        - Recipient’s email address
-            
+
+        - Recipient's email address
+
         - The (hopefully) encrypted message
-            
+
         - The key share
-            
+
+- **Rewards & Proof of Delivery** (via [farewell-claimer](https://github.com/pdroalves/farewell-claimer)):
+    - Users can attach ETH rewards to messages when creating them
+    - Claimers must prove email delivery using zk-email proofs
+    - Once all recipients are proven, claimers can withdraw the reward
+    - See the [Claimer Documentation](https://github.com/pdroalves/farewell/blob/main/docs/claimer-guide.md) for details
+
 - **Blockchain persistence**:  
     Running entirely as a smart contract on Ethereum (or other similar chains in the future), **Farewell ensures the system operates reliably for decades** without reliance on a central operator, and that **messages cannot be lost once stored**.
     
@@ -208,9 +214,9 @@ gpg --decrypt message.txt.gpg
 
 Farewell is **not** feature complete. It needs:
 
-- **Proof of email delivery**:  
-    By integrating [zk.email](https://docs.zk.email/architecture/on-chain), the message retriever could prove on-chain that the encrypted message was actually submitted to the intended recipient. 
-    This would allow `retrieve()` not only to release a DeliveryPackage but also to **reward the claimer** once they provide a valid delivery proof.
+- **Proof of email delivery** *(in progress)*:
+    By integrating [zk.email](https://docs.zk.email/architecture/on-chain), the message retriever can prove on-chain that the encrypted message was actually submitted to the intended recipient.
+    The [farewell-claimer](https://github.com/pdroalves/farewell-claimer) tool helps claimers send emails and generate proofs. Full on-chain verification is still being developed.
     
 - **Council logic**:
     A council could be set up to intervene in case of unexpected delays during the grace period. The user would define this council at registration via wallet addresses.  Council members could act when the check-in period expires, either to ensure the user is alive or to confirm death and enable message retrieval.
@@ -258,4 +264,4 @@ Think of it as fueling the project — one coffee at a time.
 
 ## 📜 License
 
-MIT
+BSD 3-Clause Clear License (see [LICENSE](LICENSE))
