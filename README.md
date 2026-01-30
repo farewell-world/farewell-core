@@ -47,7 +47,7 @@ We have a **live demo** as [proof of concept](https://www.iampedro.com/farewell)
     - Users can attach ETH rewards to messages when creating them
     - Claimers must prove email delivery using zk-email proofs
     - Once all recipients are proven, claimers can withdraw the reward
-    - See the [Claimer Documentation](https://github.com/pdroalves/farewell/blob/main/docs/claimer-guide.md) for details
+    - See the [Claimer Guide](https://github.com/pdroalves/farewell-claimer/blob/main/docs/claimer-guide.md) for details
 
 - **Blockchain persistence**:  
     Running entirely as a smart contract on Ethereum (or other similar chains in the future), **Farewell ensures the system operates reliably for decades** without reliance on a central operator, and that **messages cannot be lost once stored**.
