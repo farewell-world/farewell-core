@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity 0.8.27;
 
 /// @title ClearFarewell POC (email-recipient version)
 /// @notice Minimal on-chain PoC for posthumous message release via timeout.

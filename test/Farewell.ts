@@ -31,8 +31,8 @@ async function deployFixture() {
 const toBytes = (s: string) => ethers.toUtf8Bytes(s);
 
 // utf8 → 32B-chunks (right-padded with zeros), returned as BigInt words
-// Pads to MAX_EMAIL_BYTE_LEN (256 bytes) to prevent length leakage
-const MAX_EMAIL_BYTE_LEN = 256;
+// Pads to MAX_EMAIL_BYTE_LEN (224 bytes = 7 limbs) to prevent length leakage
+const MAX_EMAIL_BYTE_LEN = 224;
 
 function chunk32ToU256Words(u8: Uint8Array, padToMax: boolean = true): bigint[] {
   // Pad to MAX_EMAIL_BYTE_LEN if requested (for emails)
@@ -268,10 +268,10 @@ describe("Farewell", function () {
     await ethers.provider.send("evm_increaseTime", [timeShift]);
     await ethers.provider.send("evm_mine", []); // mine a block to apply the time
 
-    tx = await FarewellContract.connect(signers.bob).claim(signers.owner.address, 0);
+    tx = await FarewellContract.connect(signers.bob).claim(signers.owner.address, 1);
     await tx.wait();
 
-    const encryptedClaimedMessageAfter = await FarewellContract.connect(signers.bob).retrieve(signers.owner.address, 0);
+    const encryptedClaimedMessageAfter = await FarewellContract.connect(signers.bob).retrieve(signers.owner.address, 1);
     const claimedSkShareAfter = await fhevm.userDecryptEuint(
       FhevmType.euint128,
       encryptedClaimedMessageAfter.skShare,
@@ -453,10 +453,10 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
       await tx.wait();
 
-      // Try to revoke the claimed message (should fail)
+      // Try to revoke the claimed message (should fail - user is deceased)
       await expect(
         FarewellContract.connect(signers.owner).revokeMessage(0)
-      ).to.be.revertedWith("cannot revoke claimed message");
+      ).to.be.revertedWith("user is deceased");
     });
 
     it("should not allow non-owner to remove message", async function () {
@@ -589,7 +589,7 @@ describe("Farewell", function () {
     it("should reject name longer than 100 characters", async function () {
       const longName = "a".repeat(101);
       await expect(
-        FarewellContract.connect(signers.owner).register(longName)
+        FarewellContract.connect(signers.owner)["register(string)"](longName)
       ).to.be.revertedWith("name too long");
     });
 
@@ -632,18 +632,18 @@ describe("Farewell", function () {
       ).to.be.revertedWith("invalid index");
     });
 
-    it("should enforce email padding to 256 bytes (8 limbs)", async function () {
+    it("should enforce email padding to 224 bytes (7 limbs)", async function () {
       let tx = await FarewellContract.connect(signers.owner).register();
       await tx.wait();
 
-      // Create encrypted input with correct padding (8 limbs)
+      // Create encrypted input with correct padding (7 limbs for 224 bytes)
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
       for (const w of emailWords1) enc.add256(w);
       enc.add128(skShare);
       const encrypted = await enc.encrypt();
 
       const nLimbs = emailWords1.length;
-      expect(nLimbs).to.eq(8); // Should be 8 limbs for 256 bytes
+      expect(nLimbs).to.eq(7); // Should be 7 limbs for 224 bytes
 
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
@@ -659,7 +659,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try with wrong number of limbs (should fail)
-      const wrongLimbs = limbsHandles.slice(0, 4); // Only 4 limbs instead of 8
+      const wrongLimbs = limbsHandles.slice(0, 4); // Only 4 limbs instead of 7
       await expect(
         FarewellContract.connect(signers.owner).addMessage(
           wrongLimbs,
@@ -671,29 +671,25 @@ describe("Farewell", function () {
       ).to.be.revertedWith("limbs must match padded length");
     });
 
-    it("should reject email longer than 256 bytes", async function () {
+    it("should reject email longer than 224 bytes", async function () {
       let tx = await FarewellContract.connect(signers.owner).register();
       await tx.wait();
 
-      // Create a long email (> 256 bytes)
-      const longEmail = "a".repeat(257) + "@example.com";
-      const longEmailBytes = toBytes(longEmail);
-      const longEmailWords = chunk32ToU256Words(longEmailBytes);
-
+      // Use valid encryption (7 limbs) but pass emailByteLen > MAX_EMAIL_BYTE_LEN
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of longEmailWords) enc.add256(w);
+      for (const w of emailWords1) enc.add256(w);
       enc.add128(skShare);
       const encrypted = await enc.encrypt();
 
-      const nLimbs = longEmailWords.length;
+      const nLimbs = emailWords1.length;
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
 
-      // Should fail because emailByteLen > MAX_EMAIL_BYTE_LEN
+      // Should fail because emailByteLen (225) > MAX_EMAIL_BYTE_LEN (224)
       await expect(
         FarewellContract.connect(signers.owner).addMessage(
           limbsHandles,
-          longEmailBytes.length,
+          225,
           skShareHandle,
           payloadBytes1,
           encrypted.inputProof
@@ -715,19 +711,32 @@ describe("Farewell", function () {
       expect(members[0]).to.eq(signers.alice.address);
     });
 
-    it("should allow adding unlimited council members (no size limit)", async function () {
+    it("should reject adding more than 20 council members", async function () {
       let tx = await FarewellContract.connect(signers.owner).register();
       await tx.wait();
 
-      // Add 10 members (previously max was 5)
+      // Add 20 members (the maximum) - use signers + random wallets
       const allSigners = await ethers.getSigners();
-      for (let i = 1; i <= 10; i++) {
+      const availableSigners = allSigners.length - 1; // exclude owner at index 0
+      for (let i = 1; i <= availableSigners && i <= 20; i++) {
         tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+      // Fill remaining slots with random wallet addresses
+      for (let i = availableSigners + 1; i <= 20; i++) {
+        const randomWallet = ethers.Wallet.createRandom();
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(randomWallet.address);
         await tx.wait();
       }
 
       const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
-      expect(members.length).to.eq(10);
+      expect(members.length).to.eq(20);
+
+      // 21st member should be rejected
+      const extraWallet = ethers.Wallet.createRandom();
+      await expect(
+        FarewellContract.connect(signers.owner).addCouncilMember(extraWallet.address)
+      ).to.be.revertedWith("council full");
     });
 
     it("should allow removing council member", async function () {
@@ -931,7 +940,9 @@ describe("Farewell", function () {
     });
 
     it("should prevent claiming revoked messages", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
       // Add and revoke message
@@ -953,8 +964,8 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
       await tx.wait();
 
-      // Advance time and mark deceased
-      await ethers.provider.send("evm_increaseTime", [2]);
+      // Advance time past checkIn + grace and mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
       await ethers.provider.send("evm_mine", []);
       tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
       await tx.wait();
@@ -1059,8 +1070,8 @@ describe("Farewell", function () {
     });
 
     it("should not allow editing claimed message", async function () {
-      const checkInPeriod = 1;
-      const gracePeriod = 1;
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
@@ -1103,7 +1114,7 @@ describe("Farewell", function () {
           encrypted2.inputProof,
           ""
         )
-      ).to.be.revertedWith("cannot edit claimed message");
+      ).to.be.revertedWith("user is deceased");
     });
   });
 
@@ -1151,30 +1162,46 @@ describe("Farewell", function () {
       expect(reward).to.be.gte(ethers.parseEther("0.01"));
     });
 
-    it("should allow claiming reward with proof", async function () {
+    it("should allow claiming reward via proveDelivery + claimReward", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      // Deposit
-      const depositAmount = ethers.parseEther("1.0");
-      tx = await FarewellContract.connect(signers.owner).deposit({ value: depositAmount });
+      // Deploy mock verifier and configure
+      const MockVerifierFactory = await ethers.getContractFactory("MockGroth16Verifier");
+      const mockVerifier = await MockVerifierFactory.deploy();
+      await mockVerifier.waitForDeployment();
+      const mockVerifierAddr = await mockVerifier.getAddress();
+      tx = await FarewellContract.connect(signers.owner).setZkEmailVerifier(mockVerifierAddr);
       await tx.wait();
 
-      // Add message
+      // Set trusted DKIM key
+      const pubkeyHash = 12345n;
+      tx = await FarewellContract.connect(signers.owner).setTrustedDkimKey(ethers.ZeroHash, pubkeyHash, true);
+      await tx.wait();
+
+      // Add message with reward using addMessageWithReward
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
       for (const w of emailWords1) enc.add256(w);
       enc.add128(skShare);
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+      const rewardAmount = ethers.parseEther("0.1");
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: rewardAmount }
       );
       await tx.wait();
 
@@ -1186,17 +1213,27 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
       await tx.wait();
 
-      // Claim reward
-      const proof = "0x" + Buffer.from("mock proof").toString("hex");
+      // Prove delivery with matching public signals
+      const zkProof = {
+        pA: [0n, 0n] as [bigint, bigint],
+        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pC: [0n, 0n] as [bigint, bigint],
+        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
+      };
+      tx = await FarewellContract.connect(signers.alice).proveDelivery(
+        signers.owner.address, 0, 0, zkProof
+      );
+      await tx.wait();
+
+      // Claim reward (2-arg version)
       const balanceBefore = await ethers.provider.getBalance(signers.alice.address);
-      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof);
+      tx = await FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0);
       const receipt = await tx.wait();
       const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
       const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
 
       // Check reward was transferred (accounting for gas)
-      const reward = await FarewellContract.calculateReward(signers.owner.address, 0);
-      expect(balanceAfter + gasUsed - balanceBefore).to.be.gte(reward);
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
     });
 
     it("should prevent double claiming of reward", async function () {
@@ -1205,22 +1242,36 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      // Deposit, add message, mark deceased, claim
-      tx = await FarewellContract.connect(signers.owner).deposit({ value: ethers.parseEther("1.0") });
+      // Deploy mock verifier and configure
+      const MockVerifierFactory = await ethers.getContractFactory("MockGroth16Verifier");
+      const mockVerifier = await MockVerifierFactory.deploy();
+      await mockVerifier.waitForDeployment();
+      tx = await FarewellContract.connect(signers.owner).setZkEmailVerifier(await mockVerifier.getAddress());
+      await tx.wait();
+      const pubkeyHash = 12345n;
+      tx = await FarewellContract.connect(signers.owner).setTrustedDkimKey(ethers.ZeroHash, pubkeyHash, true);
       await tx.wait();
 
+      // Add message with reward
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
       for (const w of emailWords1) enc.add256(w);
       enc.add128(skShare);
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: ethers.parseEther("0.1") }
       );
       await tx.wait();
 
@@ -1231,46 +1282,69 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
       await tx.wait();
 
-      // Claim reward first time
-      const proof = "0x" + Buffer.from("mock proof").toString("hex");
-      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof);
+      // Prove delivery
+      const zkProof = {
+        pA: [0n, 0n] as [bigint, bigint],
+        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pC: [0n, 0n] as [bigint, bigint],
+        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
+      };
+      tx = await FarewellContract.connect(signers.alice).proveDelivery(
+        signers.owner.address, 0, 0, zkProof
+      );
       await tx.wait();
 
-      // Try to claim again (should fail)
+      // Claim reward first time
+      tx = await FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0);
+      await tx.wait();
+
+      // Try to claim again (should fail - reward already zeroed out)
       await expect(
-        FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof)
-      ).to.be.revertedWith("reward already claimed");
+        FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0)
+      ).to.be.revertedWith("no reward");
     });
   });
 
   describe("Integration Tests", function () {
-    it("should complete full flow: register → add message → deposit → mark deceased → claim → submit proof → receive reward", async function () {
+    it("should complete full flow: register → add message with reward → mark deceased → claim → proveDelivery → claimReward", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      
+
       // Register
       let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Test User", checkInPeriod, gracePeriod);
       await tx.wait();
 
-      // Deposit
-      const depositAmount = ethers.parseEther("1.0");
-      tx = await FarewellContract.connect(signers.owner).deposit({ value: depositAmount });
+      // Deploy mock verifier and configure
+      const MockVerifierFactory = await ethers.getContractFactory("MockGroth16Verifier");
+      const mockVerifier = await MockVerifierFactory.deploy();
+      await mockVerifier.waitForDeployment();
+      tx = await FarewellContract.connect(signers.owner).setZkEmailVerifier(await mockVerifier.getAddress());
+      await tx.wait();
+      const pubkeyHash = 12345n;
+      tx = await FarewellContract.connect(signers.owner).setTrustedDkimKey(ethers.ZeroHash, pubkeyHash, true);
       await tx.wait();
 
-      // Add message
+      // Add message with reward
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
       for (const w of emailWords1) enc.add256(w);
       enc.add128(skShare);
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+      const rewardAmount = ethers.parseEther("0.5");
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
         encrypted.inputProof,
-        "Test message"
+        "Test message",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: rewardAmount }
       );
       await tx.wait();
 
@@ -1284,21 +1358,27 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
       await tx.wait();
 
-      // Submit proof and claim reward
-      const proof = "0x" + Buffer.from("zk.email proof").toString("hex");
+      // Prove delivery
+      const zkProof = {
+        pA: [0n, 0n] as [bigint, bigint],
+        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pC: [0n, 0n] as [bigint, bigint],
+        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
+      };
+      tx = await FarewellContract.connect(signers.alice).proveDelivery(
+        signers.owner.address, 0, 0, zkProof
+      );
+      await tx.wait();
+
+      // Claim reward
       const balanceBefore = await ethers.provider.getBalance(signers.alice.address);
-      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0, proof);
+      tx = await FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0);
       const receipt = await tx.wait();
       const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
       const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
 
       // Verify reward was received
-      const reward = await FarewellContract.calculateReward(signers.owner.address, 0);
-      expect(balanceAfter + gasUsed - balanceBefore).to.be.gte(reward);
-
-      // Verify deposit was reduced
-      const remainingDeposit = await FarewellContract.getDeposit(signers.owner.address);
-      expect(remainingDeposit).to.eq(depositAmount - reward);
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
     });
 
     it("should complete council voting flow: add members → enter grace → vote alive → user saved", async function () {
@@ -1338,8 +1418,10 @@ describe("Farewell", function () {
     });
 
     it("should complete message lifecycle: add → edit → revoke → cannot claim", async function () {
-      // Register
-      let tx = await FarewellContract.connect(signers.owner).register();
+      // Register with custom short periods
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
       // Add message
@@ -1349,7 +1431,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1386,8 +1468,8 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
       await tx.wait();
 
-      // Mark deceased
-      await ethers.provider.send("evm_increaseTime", [2]);
+      // Mark deceased (advance past checkIn + grace)
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
       await ethers.provider.send("evm_mine", []);
       tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
       await tx.wait();
@@ -1396,6 +1478,387 @@ describe("Farewell", function () {
       await expect(
         FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)
       ).to.be.revertedWith("message was revoked");
+    });
+  });
+
+  describe("Security Fixes", function () {
+    it("C-2: should revert proveDelivery when no verifier is set", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message with reward (no verifier configured)
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+
+      // Set trusted DKIM key (needed for proof validation steps before verifier check)
+      tx = await FarewellContract.connect(signers.owner).setTrustedDkimKey(ethers.ZeroHash, 12345n, true);
+      await tx.wait();
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: ethers.parseEther("0.1") }
+      );
+      await tx.wait();
+
+      // Mark deceased and claim
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Try to prove delivery without verifier set - should revert
+      const zkProof = {
+        pA: [0n, 0n] as [bigint, bigint],
+        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pC: [0n, 0n] as [bigint, bigint],
+        publicSignals: [BigInt(recipientEmailHash), 12345n, BigInt(payloadContentHash)],
+      };
+      await expect(
+        FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof)
+      ).to.be.revertedWith("verifier not configured");
+    });
+
+    it("H-1: should prevent re-claiming an already claimed message", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Alice claims message 0
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Wait for exclusivity to expire
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Bob tries to claim the same message (should fail)
+      await expect(
+        FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)
+      ).to.be.revertedWith("already claimed");
+    });
+
+    it("H-2: should allow finalAlive user to re-enter liveness cycle via ping", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add 3 council members
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 3; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Majority vote alive
+      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+      tx = await FarewellContract.connect(allSigners[2]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+
+      // User is now FinalAlive
+      let [status] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(3); // FinalAlive
+
+      // User pings - should clear finalAlive and re-enter normal cycle
+      tx = await FarewellContract.connect(signers.owner).ping();
+      await tx.wait();
+
+      // Status should now be Alive (not FinalAlive)
+      [status] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(0); // Alive
+
+      // Advance past checkIn + grace again - now markDeceased should work
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      [status] = await FarewellContract.getUserState(signers.owner.address);
+      expect(status).to.eq(2); // Deceased
+    });
+
+    it("H-4: should prevent re-registration during grace period", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Original", checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Advance past check-in period into grace
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Try to re-register (should fail - check-in period expired)
+      await expect(
+        FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Updated", checkInPeriod, gracePeriod)
+      ).to.be.revertedWith("check-in period expired");
+    });
+
+    it("H-4: should update name on re-registration", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Original", checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      let name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("Original");
+
+      // Re-register within check-in period (should update name)
+      tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Updated", checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("Updated");
+    });
+
+    it("M-1: should invalidate old message hash when editing", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner).addMessage(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof
+      );
+      await tx.wait();
+
+      // Get original hash
+      const msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      const originalHash = msg.hash;
+      expect(await FarewellContract.messageHashes(originalHash)).to.eq(true);
+
+      // Edit message
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords2) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      tx = await FarewellContract.connect(signers.owner).editMessage(
+        0,
+        encrypted2.handles.slice(0, nLimbs),
+        emailBytes2.length,
+        encrypted2.handles[nLimbs],
+        toBytes("new payload"),
+        encrypted2.inputProof,
+        "new public msg"
+      );
+      await tx.wait();
+
+      // Old hash should be invalidated
+      expect(await FarewellContract.messageHashes(originalHash)).to.eq(false);
+
+      // New hash should be set
+      const editedMsg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      expect(await FarewellContract.messageHashes(editedMsg.hash)).to.eq(true);
+      expect(editedMsg.hash).to.not.eq(originalHash);
+    });
+
+    it("M-2: should allow clearing public message via edit", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add message with public message
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)"](
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "Hello world"
+      );
+      await tx.wait();
+
+      let msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      expect(msg.publicMessage).to.eq("Hello world");
+
+      // Edit with empty public message - should clear it
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      tx = await FarewellContract.connect(signers.owner).editMessage(
+        0,
+        encrypted2.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted2.handles[nLimbs],
+        payloadBytes1,
+        encrypted2.inputProof,
+        ""
+      );
+      await tx.wait();
+
+      msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      expect(msg.publicMessage).to.eq("");
+    });
+
+    it("M-5: should clear stale vote when removing council member during active vote", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add 3 council members
+      const allSigners = await ethers.getSigners();
+      for (let i = 1; i <= 3; i++) {
+        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
+        await tx.wait();
+      }
+
+      // Advance to grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Member 1 votes alive
+      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+
+      let [aliveVotes] = await FarewellContract.getGraceVoteStatus(signers.owner.address);
+      expect(aliveVotes).to.eq(1);
+
+      // Owner removes member 1 (who voted alive) - ping first to re-enter alive status
+      // Actually owner can't ping because they're in grace. They need to remove member directly.
+      tx = await FarewellContract.connect(signers.owner).removeCouncilMember(allSigners[1].address);
+      await tx.wait();
+
+      // Vote count should be decremented
+      [aliveVotes] = await FarewellContract.getGraceVoteStatus(signers.owner.address);
+      expect(aliveVotes).to.eq(0);
+    });
+
+    it("M-6: should refund reward ETH when revoking a reward-bearing message", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      // Add message with reward
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+      const rewardAmount = ethers.parseEther("0.5");
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: rewardAmount }
+      );
+      await tx.wait();
+
+      // Check locked rewards
+      const lockedBefore = await FarewellContract.lockedRewards(signers.owner.address);
+      expect(lockedBefore).to.eq(rewardAmount);
+
+      // Revoke message - should refund reward
+      const balanceBefore = await ethers.provider.getBalance(signers.owner.address);
+      tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const balanceAfter = await ethers.provider.getBalance(signers.owner.address);
+
+      // Check that reward was refunded (minus gas)
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
+
+      // Locked rewards should be zero
+      const lockedAfter = await FarewellContract.lockedRewards(signers.owner.address);
+      expect(lockedAfter).to.eq(0);
+    });
+
+    it("I-4: should reject addMessageWithReward with zero reward", async function () {
+      let tx = await FarewellContract.connect(signers.owner).register();
+      await tx.wait();
+
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+
+      await expect(
+        FarewellContract.connect(signers.owner).addMessageWithReward(
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes1.length,
+          encrypted.handles[nLimbs],
+          payloadBytes1,
+          encrypted.inputProof,
+          "",
+          [recipientEmailHash],
+          payloadContentHash,
+          { value: 0 }
+        )
+      ).to.be.revertedWith("must include reward");
     });
   });
 });
