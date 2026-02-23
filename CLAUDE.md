@@ -34,7 +34,7 @@ npx hardhat deploy --network <network>
 
 ## Key Technologies
 
-- **Smart Contracts**: Solidity 0.8.24
+- **Smart Contracts**: Solidity 0.8.27
 - **FHE**: Zama FHEVM (fhevmjs v0.9)
 - **Framework**: Hardhat
 - **Upgradeable**: OpenZeppelin UUPS proxy pattern
@@ -188,6 +188,14 @@ npx hardhat coverage                # Generate coverage report
 npx hardhat deploy --network sepolia
 npx hardhat verify --network sepolia <address>
 ```
+
+## Cross-Project Compatibility
+
+**IMPORTANT**: Changes to the contract interface affect both the Farewell UI and farewell-claimer:
+
+1. **Farewell UI** (`../farewell/packages/site`) — generates ABIs from this contract via `genabi`. If you change function signatures, events, or structs, the UI's ABI must be regenerated.
+2. **farewell-claimer** (`../farewell-claimer`) — parses claim package JSON files that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the claimer's `_load_claim_package()` accordingly.
+3. The claim package JSON format uses fields: `recipients`, `skShare`, `encryptedPayload`, `contentHash` — these map to contract data returned by `retrieve()`.
 
 ## Related Projects
 
