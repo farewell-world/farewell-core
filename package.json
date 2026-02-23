@@ -3,7 +3,7 @@
   "description": "Hardhat-based template for developing FHEVM Solidity smart contracts",
   "version": "0.1.0",
   "engines": {
-    "node": ">=20",
+    "node": ">=22.16.0",
     "npm": ">=7.0.0"
   },
   "license": "BSD-3-Clause-Clear",
