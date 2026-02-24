@@ -167,9 +167,6 @@ The contract uses Zama's FHEVM for encrypted data:
 3. **Timestamp Manipulation**: Block timestamps can be manipulated ~15 seconds
 4. **ZK Verifier Placeholder**: Current implementation accepts proofs without verifier if not set
 
-### Audit Findings
-See `/home/pedro/Code/farewell/AUDIT.md` for security audit results.
-
 ## Development Guidelines
 
 ### Code Style
@@ -195,8 +192,8 @@ npx hardhat verify --network sepolia <address>
 
 **IMPORTANT**: Changes to the contract interface affect both the Farewell UI and farewell-claimer:
 
-1. **Farewell UI** (`../farewell/packages/site`) — generates ABIs from this contract via `genabi`. If you change function signatures, events, or structs, the UI's ABI must be regenerated.
-2. **farewell-claimer** (`../farewell-claimer`) — parses claim package JSON files that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the claimer's `_load_claim_package()` accordingly.
+1. **Farewell UI** ([farewell.world](https://farewell.world)) — generates ABIs from this contract via `genabi`. If you change function signatures, events, or structs, the UI's ABI must be regenerated.
+2. **farewell-claimer** ([repo](https://github.com/farewell-world/farewell-claimer)) — parses claim package JSON files that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the claimer's `_load_claim_package()` accordingly.
 3. The claim package JSON format uses fields: `recipients`, `skShare`, `encryptedPayload`, `contentHash` — these map to contract data returned by `retrieve()`.
 
 ## Proof Architecture
@@ -228,8 +225,7 @@ See [docs/proof-structure.md](docs/proof-structure.md) for the complete delivery
 1. **Update this CLAUDE.md** if contract interfaces, events, or architecture change
 2. **Update README.md** if user-facing documentation changes
 3. **Regenerate ABI** in farewell UI repo: `npm run genabi`
-4. **Update docs/instructions_to_build_client.md** in farewell repo if APIs change
-5. **Run tests** before committing: `npx hardhat test`
+4. **Run tests** before committing: `npx hardhat test`
 6. **Check gas costs** for new functions: `npx hardhat test --reporter gas`
 
 Any AI agent working on this repository should ensure documentation stays synchronized with code changes.
