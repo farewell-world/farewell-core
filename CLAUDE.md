@@ -4,7 +4,7 @@
 
 Farewell Core contains the smart contracts for the Farewell protocol - a decentralized application for posthumous encrypted messages using Fully Homomorphic Encryption (FHE) on Ethereum.
 
-**Status**: Proof-of-concept deployed on Sepolia testnet. Not production-ready.
+**Status**: Beta on Sepolia testnet.
 
 **Live Demo**: https://farewell.world
 
@@ -18,7 +18,10 @@ farewell-core/
 │   └── Farewell.sol          # Main contract with all protocol logic
 ├── deploy/                    # Deployment scripts
 ├── docs/
-│   └── proof-structure.md    # Delivery proof architecture & verification spec
+│   ├── protocol.md           # Full protocol specification (lifecycle, encryption, FHE, council, rewards)
+│   ├── contract-api.md       # Complete API reference (functions, events, errors, constants)
+│   ├── building-a-client.md  # Guide with TypeScript examples for building alternative clients
+│   └── proof-structure.md    # Delivery proof architecture & zk-email verification spec
 ├── test/                      # Hardhat tests
 ├── hardhat.config.ts          # Hardhat configuration
 ├── package.json
@@ -165,7 +168,7 @@ The contract uses Zama's FHEVM for encrypted data:
 1. **No Recovery**: Users marked deceased cannot be recovered (except via council vote before finalization)
 2. **FHE Permissions**: Once `FHE.allow()` is called, it cannot be revoked
 3. **Timestamp Manipulation**: Block timestamps can be manipulated ~15 seconds
-4. **ZK Verifier Placeholder**: Current implementation accepts proofs without verifier if not set
+4. **ZK Verifier Configuration**: Current beta implementation requires the verifier contract to be set by the owner
 
 ## Development Guidelines
 
@@ -196,15 +199,14 @@ npx hardhat verify --network sepolia <address>
 2. **farewell-claimer** ([repo](https://github.com/farewell-world/farewell-claimer)) — parses claim package JSON files that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the claimer's `_load_claim_package()` accordingly.
 3. The claim package JSON format uses fields: `recipients`, `skShare`, `encryptedPayload`, `contentHash` — these map to contract data returned by `retrieve()`.
 
-## Proof Architecture
+## Documentation
 
-See [docs/proof-structure.md](docs/proof-structure.md) for the complete delivery proof specification, including:
-- End-to-end message lifecycle with ASCII diagrams
-- Claim package and DeliveryProofJson formats
-- Public signals (recipientEmailHash, dkimPubkeyHash, contentHash)
-- Contract verification flow (`_verifyZkEmailProof`)
-- Multi-recipient bitmap tracking
-- Current PoC status vs future zk-email integration
+| Document | Description |
+|----------|-------------|
+| [docs/protocol.md](docs/protocol.md) | Full protocol specification — lifecycle, encryption, key sharing, FHE, council, rewards |
+| [docs/contract-api.md](docs/contract-api.md) | Complete API reference — every function, event, struct, constant, and error |
+| [docs/building-a-client.md](docs/building-a-client.md) | Guide with TypeScript examples for building alternative clients |
+| [docs/proof-structure.md](docs/proof-structure.md) | Delivery proof architecture — zk-email format, Groth16 verification, data structures |
 
 ## Related Projects
 
@@ -226,6 +228,12 @@ See [docs/proof-structure.md](docs/proof-structure.md) for the complete delivery
 2. **Update README.md** if user-facing documentation changes
 3. **Regenerate ABI** in farewell UI repo: `npm run genabi`
 4. **Run tests** before committing: `npx hardhat test`
-6. **Check gas costs** for new functions: `npx hardhat test --reporter gas`
+5. **Check gas costs** for new functions: `npx hardhat test --reporter gas`
+6. **Keep documentation in sync** with code changes:
+   - When adding/changing/removing contract functions, events, or constants → update `docs/contract-api.md`
+   - When changing protocol behavior (lifecycle, encryption, claiming, rewards) → update `docs/protocol.md`
+   - When changing function signatures or FHE encryption patterns → update `docs/building-a-client.md`
+   - When changing proof verification or delivery flow → update `docs/proof-structure.md`
+   - When changing deployed addresses → update `README.md`, `docs/contract-api.md`, and `docs/building-a-client.md`
 
 Any AI agent working on this repository should ensure documentation stays synchronized with code changes.
