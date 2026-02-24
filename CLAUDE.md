@@ -17,6 +17,8 @@ farewell-core/
 ├── contracts/
 │   └── Farewell.sol          # Main contract with all protocol logic
 ├── deploy/                    # Deployment scripts
+├── docs/
+│   └── proof-structure.md    # Delivery proof architecture & verification spec
 ├── test/                      # Hardhat tests
 ├── hardhat.config.ts          # Hardhat configuration
 ├── package.json
@@ -197,10 +199,21 @@ npx hardhat verify --network sepolia <address>
 2. **farewell-claimer** (`../farewell-claimer`) — parses claim package JSON files that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the claimer's `_load_claim_package()` accordingly.
 3. The claim package JSON format uses fields: `recipients`, `skShare`, `encryptedPayload`, `contentHash` — these map to contract data returned by `retrieve()`.
 
+## Proof Architecture
+
+See [docs/proof-structure.md](docs/proof-structure.md) for the complete delivery proof specification, including:
+- End-to-end message lifecycle with ASCII diagrams
+- Claim package and DeliveryProofJson formats
+- Public signals (recipientEmailHash, dkimPubkeyHash, contentHash)
+- Contract verification flow (`_verifyZkEmailProof`)
+- Multi-recipient bitmap tracking
+- Current PoC status vs future zk-email integration
+
 ## Related Projects
 
 - **Farewell UI**: https://github.com/pdroalves/farewell
 - **Farewell Claimer**: https://github.com/pdroalves/farewell-claimer
+- **Farewell Decrypter**: https://github.com/pdroalves/farewell-decrypter
 - **Zama FHEVM**: https://docs.zama.ai/fhevm
 
 ## Git Guidelines
