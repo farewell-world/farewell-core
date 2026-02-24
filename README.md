@@ -210,13 +210,13 @@ How can we define a delivery protocol that is friendly to delivery proofs and po
 
 ## Building Alternative Clients
 
-For a detailed guide on interacting with the Farewell contract programmatically (including FHE encryption, message operations, council management, and claiming workflows), see [instructions_to_build_client.md](https://github.com/farewell-world/farewell/blob/main/docs/instructions_to_build_client.md) in the main Farewell repository.
+For a detailed guide on interacting with the Farewell contract programmatically (including FHE encryption, message operations, council management, and claiming workflows), see the documentation at [farewell.world](https://farewell.world).
 
 ---
 
 ## Related Projects
 
-- [Farewell UI](https://farewell.world) — Web application ([source](https://github.com/farewell-world/farewell))
+- [Farewell UI](https://farewell.world) — Web application
 - [farewell-claimer](https://github.com/farewell-world/farewell-claimer) — CLI tool for claiming rewards
 - [Zama FHEVM](https://docs.zama.ai/fhevm) — Fully Homomorphic Encryption for Ethereum
 - [zk.email](https://docs.zk.email/) — ZK email proofs
