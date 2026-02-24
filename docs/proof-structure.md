@@ -334,5 +334,5 @@ When the real zk-email circuit is integrated:
 ## Related Documentation
 
 - [Claimer User Guide](./claimer-guide.md) — Step-by-step workflow
-- [farewell-core Protocol](https://github.com/pdroalves/farewell-core) — Smart contract implementation
+- [farewell-core Protocol](https://github.com/farewell-world/farewell-core) — Smart contract implementation
 - [zk.email Documentation](https://docs.zk.email/) — Circuit design and verification
