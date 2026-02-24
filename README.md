@@ -29,7 +29,7 @@ Deployed on Ethereum, **Farewell inherits the reliability of decentralized infra
   - Anyone can call `claim()` to mark a message for release (the `markDeceased()` caller has a 24-hour priority window)
   - `retrieve()` returns the FHE-decrypted delivery package: recipient email, key share, and encrypted payload
 
-- **Rewards and proof of delivery**: Users can attach ETH rewards to messages. Claimers prove email delivery via zk-email proofs and claim the reward after all recipients are verified. See the [farewell-claimer](https://github.com/pdroalves/farewell-claimer) tool.
+- **Rewards and proof of delivery**: Users can attach ETH rewards to messages. Claimers prove email delivery via zk-email proofs and claim the reward after all recipients are verified. See the [farewell-claimer](https://github.com/farewell-world/farewell-claimer) tool.
 
 - **Blockchain persistence**: Running as a smart contract on Ethereum, the system needs no central server. Messages are permanent once stored.
 
@@ -71,7 +71,7 @@ Deployed on Ethereum, **Farewell inherits the reliability of decentralized infra
 
 6. **Deliver & earn reward** — The claimer:
    - Downloads a claim package JSON from the [Farewell UI](https://farewell.world).
-   - Uses the [farewell-claimer](https://github.com/pdroalves/farewell-claimer) tool to decrypt the message (using the off-chain secret `s'`), send it via email, and generate zk-email proofs.
+   - Uses the [farewell-claimer](https://github.com/farewell-world/farewell-claimer) tool to decrypt the message (using the off-chain secret `s'`), send it via email, and generate zk-email proofs.
    - Submits proofs on-chain via `proveDelivery()` and claims the reward with `claimReward()`.
 
 ---
@@ -198,26 +198,26 @@ npx hardhat deploy --network sepolia
 
 Is it possible to store and release encrypted key shares purely on-chain without depending on the Zama coprocessor?
 
-[Discussion on GitHub](https://github.com/pdroalves/farewell-core/issues/2)
+[Discussion on GitHub](https://github.com/farewell-world/farewell-core/issues/2)
 
 ### Reliable delivery protocol
 
 How can we define a delivery protocol that is friendly to delivery proofs and potentially better than email in terms of reliability and censorship resistance?
 
-[Discussion on GitHub](https://github.com/pdroalves/farewell-core/issues/1)
+[Discussion on GitHub](https://github.com/farewell-world/farewell-core/issues/1)
 
 ---
 
 ## Building Alternative Clients
 
-For a detailed guide on interacting with the Farewell contract programmatically (including FHE encryption, message operations, council management, and claiming workflows), see [instructions_to_build_client.md](https://github.com/pdroalves/farewell/blob/main/docs/instructions_to_build_client.md) in the main Farewell repository.
+For a detailed guide on interacting with the Farewell contract programmatically (including FHE encryption, message operations, council management, and claiming workflows), see [instructions_to_build_client.md](https://github.com/farewell-world/farewell/blob/main/docs/instructions_to_build_client.md) in the main Farewell repository.
 
 ---
 
 ## Related Projects
 
-- [Farewell UI](https://farewell.world) — Web application ([source](https://github.com/pdroalves/farewell))
-- [farewell-claimer](https://github.com/pdroalves/farewell-claimer) — CLI tool for claiming rewards
+- [Farewell UI](https://farewell.world) — Web application ([source](https://github.com/farewell-world/farewell))
+- [farewell-claimer](https://github.com/farewell-world/farewell-claimer) — CLI tool for claiming rewards
 - [Zama FHEVM](https://docs.zama.ai/fhevm) — Fully Homomorphic Encryption for Ethereum
 - [zk.email](https://docs.zk.email/) — ZK email proofs
 

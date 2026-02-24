@@ -211,9 +211,9 @@ See [docs/proof-structure.md](docs/proof-structure.md) for the complete delivery
 
 ## Related Projects
 
-- **Farewell UI**: https://github.com/pdroalves/farewell
-- **Farewell Claimer**: https://github.com/pdroalves/farewell-claimer
-- **Farewell Decrypter**: https://github.com/pdroalves/farewell-decrypter
+- **Farewell UI**: https://github.com/farewell-world/farewell
+- **Farewell Claimer**: https://github.com/farewell-world/farewell-claimer
+- **Farewell Decrypter**: https://github.com/farewell-world/farewell-decrypter
 - **Zama FHEVM**: https://docs.zama.ai/fhevm
 
 ## Git Guidelines
