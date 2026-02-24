@@ -1,6 +1,6 @@
 # Farewell
 
-<p align="center"> <img src="assets/farewell-logo.png" alt="Farewell Logo" width="600"/> </p>
+<p align="center"> <img src="assets/farewell-white-bg.png" alt="Farewell Logo" width="600"/> </p>
 
 **Farewell** is a smart contract that allows people to leave **posthumous encrypted messages** to their loved ones.
 It uses [Zama FHEVM](https://github.com/zama-ai/fhevm) to store encrypted data on-chain, enforce liveness checks, and release messages only after a configurable timeout.
