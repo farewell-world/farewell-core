@@ -22,8 +22,8 @@ interface IGroth16Verifier {
     ) external view returns (bool);
 }
 
-/// @title Farewell POC (email-recipient version)
-/// @notice Minimal on-chain PoC for posthumous message release via timeout.
+/// @title Farewell (email-recipient version)
+/// @notice On-chain posthumous message release via timeout.
 /// - Recipients are EMAILS (string), not wallet addresses.
 /// - Anyone can call `claim` after timeout; we emit an event with (email, data).
 /// - On-chain data is public. Treat `data` as ciphertext in real use.

@@ -240,13 +240,13 @@ Reward claimable when:
   For N=3: (1 << 3) - 1 = 0b111 = 7 ✓
 ```
 
-## Current Status: Proof-of-Concept
+## Current Status: Beta
 
-**Important:** The current implementation is a proof-of-concept with placeholder values:
+**Important:** The current implementation is in beta with placeholder values for some components:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│               CURRENT POC IMPLEMENTATION                     │
+│               CURRENT BETA IMPLEMENTATION                     │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ⚠ Groth16 Proof (pA, pB, pC): All zeros (placeholder)    │
@@ -333,6 +333,8 @@ When the real zk-email circuit is integrated:
 
 ## Related Documentation
 
-- [Claimer User Guide](./claimer-guide.md) — Step-by-step workflow
-- [farewell-core Protocol](https://github.com/farewell-world/farewell-core) — Smart contract implementation
+- [Protocol Specification](protocol.md) — Full protocol design and user lifecycle
+- [Contract API Reference](contract-api.md) — Function signatures, events, and errors
+- [Building a Client](building-a-client.md) — TypeScript examples for integration
+- [Claimer User Guide](https://github.com/farewell-world/farewell-claimer/blob/main/docs/claimer-guide.md) — Step-by-step claiming workflow
 - [zk.email Documentation](https://docs.zk.email/) — Circuit design and verification
