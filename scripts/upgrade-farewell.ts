@@ -5,6 +5,7 @@ async function main() {
 
   if (!proxyAddress) {
     // Try to get from deployments
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { deployments } = require("hardhat");
     const deployment = await deployments.get("Farewell");
     if (!deployment) {
@@ -64,6 +65,7 @@ async function upgradeContract(proxyAddress: string) {
 
   // Save updated deployment info
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { deployments } = require("hardhat");
     const artifact = await (await import("hardhat")).artifacts.readArtifact("Farewell");
     await deployments.save("Farewell", {
