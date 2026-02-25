@@ -23,10 +23,7 @@ export class IInputVerifier__factory {
   static createInterface(): IInputVerifierInterface {
     return new Interface(_abi) as IInputVerifierInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): IInputVerifier {
+  static connect(address: string, runner?: ContractRunner | null): IInputVerifier {
     return new Contract(address, _abi, runner) as unknown as IInputVerifier;
   }
 }

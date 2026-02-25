@@ -3,10 +3,7 @@
 /* eslint-disable */
 
 import { Contract, Interface, type ContractRunner } from "ethers";
-import type {
-  IKMSVerifier,
-  IKMSVerifierInterface,
-} from "../../../../../@fhevm/solidity/lib/FHE.sol/IKMSVerifier";
+import type { IKMSVerifier, IKMSVerifierInterface } from "../../../../../@fhevm/solidity/lib/FHE.sol/IKMSVerifier";
 
 const _abi = [
   {
@@ -45,10 +42,7 @@ export class IKMSVerifier__factory {
   static createInterface(): IKMSVerifierInterface {
     return new Interface(_abi) as IKMSVerifierInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): IKMSVerifier {
+  static connect(address: string, runner?: ContractRunner | null): IKMSVerifier {
     return new Contract(address, _abi, runner) as unknown as IKMSVerifier;
   }
 }

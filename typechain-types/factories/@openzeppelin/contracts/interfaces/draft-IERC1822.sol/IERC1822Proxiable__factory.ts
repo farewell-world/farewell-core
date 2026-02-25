@@ -29,10 +29,7 @@ export class IERC1822Proxiable__factory {
   static createInterface(): IERC1822ProxiableInterface {
     return new Interface(_abi) as IERC1822ProxiableInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): IERC1822Proxiable {
+  static connect(address: string, runner?: ContractRunner | null): IERC1822Proxiable {
     return new Contract(address, _abi, runner) as unknown as IERC1822Proxiable;
   }
 }

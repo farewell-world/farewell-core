@@ -39,10 +39,7 @@ export class Initializable__factory {
   static createInterface(): InitializableInterface {
     return new Interface(_abi) as InitializableInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): Initializable {
+  static connect(address: string, runner?: ContractRunner | null): Initializable {
     return new Contract(address, _abi, runner) as unknown as Initializable;
   }
 }

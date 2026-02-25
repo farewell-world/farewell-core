@@ -3,10 +3,7 @@
 /* eslint-disable */
 
 import { Contract, Interface, type ContractRunner } from "ethers";
-import type {
-  IBeacon,
-  IBeaconInterface,
-} from "../../../../../@openzeppelin/contracts/proxy/beacon/IBeacon";
+import type { IBeacon, IBeaconInterface } from "../../../../../@openzeppelin/contracts/proxy/beacon/IBeacon";
 
 const _abi = [
   {

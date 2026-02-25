@@ -1,10 +1,12 @@
 # Farewell Delivery Proof Structure
 
-This document explains the complete Farewell delivery proof architecture, including the zk-email proof format, contract verification flow, and data structures that bridge the off-chain claimer tool with on-chain verification.
+This document explains the complete Farewell delivery proof architecture, including the zk-email proof format, contract
+verification flow, and data structures that bridge the off-chain claimer tool with on-chain verification.
 
 ## Overview
 
 The Farewell protocol uses a Groth16 zero-knowledge proof (via the zk-email framework) to prove that:
+
 1. A claimer actually sent an email to a recipient
 2. The recipient email address matches the on-chain commitment (Poseidon hash)
 3. The message content matches the stored content hash
@@ -66,6 +68,7 @@ The claim package is downloaded from the Farewell UI and contains the encrypted 
 ```
 
 **Field Descriptions:**
+
 - `type`: Must be `"farewell-claim-package"` (identifies format to claimer)
 - `owner`: Message creator's wallet address
 - `messageIndex`: ID of the message within owner's message list
@@ -179,13 +182,12 @@ The proof JSON uploaded to the contract for each recipient:
       "email": "alice@example.com",
       "proof": {
         "pA": ["0x...", "0x..."],
-        "pB": [["0x...", "0x..."], ["0x...", "0x..."]],
+        "pB": [
+          ["0x...", "0x..."],
+          ["0x...", "0x..."]
+        ],
         "pC": ["0x...", "0x..."],
-        "publicSignals": [
-          "0x1234...",
-          "0x5678...",
-          "0xabcd..."
-        ]
+        "publicSignals": ["0x1234...", "0x5678...", "0xabcd..."]
       }
     },
     {
@@ -193,13 +195,12 @@ The proof JSON uploaded to the contract for each recipient:
       "email": "bob@example.com",
       "proof": {
         "pA": ["0x...", "0x..."],
-        "pB": [["0x...", "0x..."], ["0x...", "0x..."]],
+        "pB": [
+          ["0x...", "0x..."],
+          ["0x...", "0x..."]
+        ],
         "pC": ["0x...", "0x..."],
-        "publicSignals": [
-          "0x1234...",
-          "0x5678...",
-          "0xabcd..."
-        ]
+        "publicSignals": ["0x1234...", "0x5678...", "0xabcd..."]
       }
     }
   ],
@@ -211,6 +212,7 @@ The proof JSON uploaded to the contract for each recipient:
 ```
 
 **Field Descriptions:**
+
 - `pA`, `pB`, `pC`: Groth16 proof elliptic curve points (BN254)
 - `publicSignals`: The 3 public signals output by the circuit
 - `recipientIndex`: Position in the original recipients[] array
@@ -321,12 +323,14 @@ When the real zk-email circuit is integrated:
 ## Security Properties
 
 **Proven:**
+
 - Email was signed by a DKIM-verified server (no forgery possible)
 - Recipient email matches on-chain commitment (no address spoofing)
 - Message content matches stored hash (no tampering possible)
 - Claimer performed actual delivery (attestation of delivery)
 
 **Not Proven:**
+
 - Recipient actually read or understood the message
 - No coercion or fraud in message creation
 - No key material compromise during transit
@@ -336,5 +340,6 @@ When the real zk-email circuit is integrated:
 - [Protocol Specification](protocol.md) — Full protocol design and user lifecycle
 - [Contract API Reference](contract-api.md) — Function signatures, events, and errors
 - [Building a Client](building-a-client.md) — TypeScript examples for integration
-- [Claimer User Guide](https://github.com/farewell-world/farewell-claimer/blob/main/docs/claimer-guide.md) — Step-by-step claiming workflow
+- [Claimer User Guide](https://github.com/farewell-world/farewell-claimer/blob/main/docs/claimer-guide.md) —
+  Step-by-step claiming workflow
 - [zk.email Documentation](https://docs.zk.email/) — Circuit design and verification
