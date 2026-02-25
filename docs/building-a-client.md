@@ -1,6 +1,8 @@
 # Building a Farewell Client
 
-This document provides detailed instructions for building a client that implements all features supported by the Farewell smart contract. The goal is to enable developers to create alternative frontends, mobile apps, or integrations with the Farewell protocol.
+This document provides detailed instructions for building a client that implements all features supported by the
+Farewell smart contract. The goal is to enable developers to create alternative frontends, mobile apps, or integrations
+with the Farewell protocol.
 
 ## Table of Contents
 
@@ -33,10 +35,10 @@ Note: The npm package is `fhevmjs` (from Zama), not `@fhenixprotocol/fhevmjs`.
 
 ### Contract Information
 
-| Network | Chain ID | Contract Address |
-|---------|----------|------------------|
-| Sepolia | 11155111 | `0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3` |
-| Hardhat (Local) | 31337 | Varies per deployment |
+| Network         | Chain ID | Contract Address                             |
+| --------------- | -------- | -------------------------------------------- |
+| Sepolia         | 11155111 | `0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3` |
+| Hardhat (Local) | 31337    | Varies per deployment                        |
 
 ### Loading the ABI
 
@@ -47,7 +49,7 @@ After compiling the contract with Hardhat, the ABI is available at `artifacts/co
 // npx hardhat compile
 
 // Import the ABI from the compiled artifact
-import FarewellArtifact from '../artifacts/contracts/Farewell.sol/Farewell.json';
+import FarewellArtifact from "../artifacts/contracts/Farewell.sol/Farewell.json";
 
 // Or, for browsers, manually copy the ABI from the artifact JSON file
 const FarewellABI = FarewellArtifact.abi;
@@ -84,11 +86,11 @@ uint256 constant REWARD_PER_KB = 0.005 ether;
 ### Basic Setup
 
 ```typescript
-import { ethers, BrowserProvider, Contract } from 'ethers';
-import FarewellArtifact from '../artifacts/contracts/Farewell.sol/Farewell.json';
+import { ethers, BrowserProvider, Contract } from "ethers";
+import FarewellArtifact from "../artifacts/contracts/Farewell.sol/Farewell.json";
 
 const FAREWELL_ADDRESSES: Record<number, string> = {
-  11155111: '0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3', // Sepolia
+  11155111: "0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3", // Sepolia
   // 31337: '0x...', // Hardhat (varies per deployment)
 };
 
@@ -113,12 +115,13 @@ async function connectToContract() {
 
 ## FHE Setup
 
-Farewell uses Zama's FHEVM for encrypting recipient emails and key shares. You must initialize the FHE instance before performing encryption operations.
+Farewell uses Zama's FHEVM for encrypting recipient emails and key shares. You must initialize the FHE instance before
+performing encryption operations.
 
 ### Initialize FHEVM
 
 ```typescript
-import { createFhevmInstance, FhevmInstance } from 'fhevmjs';
+import { createFhevmInstance, FhevmInstance } from "fhevmjs";
 
 async function initFhevm(provider: BrowserProvider): Promise<FhevmInstance> {
   const network = await provider.getNetwork();
@@ -127,7 +130,7 @@ async function initFhevm(provider: BrowserProvider): Promise<FhevmInstance> {
   // Get FHE public key from the contract/coprocessor
   const instance = await createFhevmInstance({
     networkUrl: provider._network?.name,
-    gatewayUrl: 'https://gateway.zama.ai', // Zama's gateway
+    gatewayUrl: "https://gateway.zama.ai", // Zama's gateway
   });
 
   return instance;
@@ -144,7 +147,7 @@ function padEmail(email: string): Uint8Array {
   const emailBytes = encoder.encode(email);
 
   if (emailBytes.length > 224) {
-    throw new Error('Email too long (max 224 bytes)');
+    throw new Error("Email too long (max 224 bytes)");
   }
 
   // Pad to MAX_EMAIL_BYTE_LEN
@@ -157,7 +160,7 @@ async function encryptEmail(
   fhevmInstance: FhevmInstance,
   email: string,
   contractAddress: string,
-  userAddress: string
+  userAddress: string,
 ): Promise<{ limbHandles: bigint[]; byteLen: number; inputProof: Uint8Array }> {
   const padded = padEmail(email);
   const byteLen = new TextEncoder().encode(email).length;
@@ -170,7 +173,7 @@ async function encryptEmail(
 
   for (let i = 0; i < numLimbs; i++) {
     const limb = padded.slice(i * 32, (i + 1) * 32);
-    const value = BigInt('0x' + Buffer.from(limb).toString('hex'));
+    const value = BigInt("0x" + Buffer.from(limb).toString("hex"));
     input.add256(value);
   }
 
@@ -179,7 +182,7 @@ async function encryptEmail(
   return {
     limbHandles: encrypted.handles,
     byteLen,
-    inputProof: encrypted.inputProof
+    inputProof: encrypted.inputProof,
   };
 }
 ```
@@ -191,13 +194,13 @@ async function encryptKeyShare(
   fhevmInstance: FhevmInstance,
   keyShare: Uint8Array, // 16 bytes (128 bits)
   contractAddress: string,
-  userAddress: string
+  userAddress: string,
 ): Promise<{ handle: bigint; inputProof: Uint8Array }> {
   if (keyShare.length !== 16) {
-    throw new Error('Key share must be 16 bytes (128 bits)');
+    throw new Error("Key share must be 16 bytes (128 bits)");
   }
 
-  const value = BigInt('0x' + Buffer.from(keyShare).toString('hex'));
+  const value = BigInt("0x" + Buffer.from(keyShare).toString("hex"));
 
   const input = fhevmInstance.createEncryptedInput(contractAddress, userAddress);
   input.add128(value);
@@ -206,7 +209,7 @@ async function encryptKeyShare(
 
   return {
     handle: encrypted.handles[0],
-    inputProof: encrypted.inputProof
+    inputProof: encrypted.inputProof,
   };
 }
 ```
@@ -219,10 +222,10 @@ async function encryptKeyShare(
 
 ```typescript
 enum UserStatus {
-  Alive = 0,      // Within check-in period
-  Grace = 1,      // Missed check-in, within grace period
-  Deceased = 2,   // Finalized deceased or timeout
-  FinalAlive = 3  // Council voted alive - cannot be marked deceased
+  Alive = 0, // Within check-in period
+  Grace = 1, // Missed check-in, within grace period
+  Deceased = 2, // Finalized deceased or timeout
+  FinalAlive = 3, // Council voted alive - cannot be marked deceased
 }
 ```
 
@@ -233,7 +236,7 @@ async function register(
   contract: Contract,
   name: string,
   checkInPeriod: number, // in seconds (min 1 day = 86400)
-  gracePeriod: number    // in seconds (min 1 day = 86400)
+  gracePeriod: number, // in seconds (min 1 day = 86400)
 ): Promise<void> {
   const tx = await contract.register(name, checkInPeriod, gracePeriod);
   await tx.wait();
@@ -241,7 +244,7 @@ async function register(
 
 // Or use defaults (30 days check-in, 7 days grace)
 async function registerWithDefaults(contract: Contract, name: string): Promise<void> {
-  const tx = await contract['register(string)'](name);
+  const tx = await contract["register(string)"](name);
   await tx.wait();
 }
 ```
@@ -259,7 +262,7 @@ async function isRegistered(contract: Contract, address: string): Promise<boolea
 ```typescript
 async function getUserState(
   contract: Contract,
-  address: string
+  address: string,
 ): Promise<{ status: UserStatus; graceSecondsLeft: bigint }> {
   const [status, graceSecondsLeft] = await contract.getUserState(address);
   return { status: Number(status) as UserStatus, graceSecondsLeft };
@@ -299,34 +302,33 @@ async function addMessage(
   contract: Contract,
   fhevmInstance: FhevmInstance,
   recipientEmail: string,
-  payload: Uint8Array,          // AES-encrypted message content
-  keyShare: Uint8Array,         // 16-byte key share
-  publicMessage?: string        // Optional cleartext message
+  payload: Uint8Array, // AES-encrypted message content
+  keyShare: Uint8Array, // 16-byte key share
+  publicMessage?: string, // Optional cleartext message
 ): Promise<bigint> {
   const contractAddress = await contract.getAddress();
   const userAddress = await contract.runner.getAddress();
 
   // Encrypt recipient email
-  const { limbHandles, byteLen, inputProof: emailProof } = await encryptEmail(
-    fhevmInstance,
-    recipientEmail,
-    contractAddress,
-    userAddress
-  );
+  const {
+    limbHandles,
+    byteLen,
+    inputProof: emailProof,
+  } = await encryptEmail(fhevmInstance, recipientEmail, contractAddress, userAddress);
 
   // Encrypt key share
   const { handle: skShareHandle, inputProof: skProof } = await encryptKeyShare(
     fhevmInstance,
     keyShare,
     contractAddress,
-    userAddress
+    userAddress,
   );
 
   // Combine input proofs
   const inputProof = new Uint8Array([...emailProof, ...skProof]);
 
   // Convert payload to hex
-  const payloadHex = '0x' + Buffer.from(payload).toString('hex');
+  const payloadHex = "0x" + Buffer.from(payload).toString("hex");
 
   const tx = await contract.addMessage(
     limbHandles,
@@ -334,16 +336,14 @@ async function addMessage(
     skShareHandle,
     payloadHex,
     inputProof,
-    publicMessage || ''
+    publicMessage || "",
   );
 
   const receipt = await tx.wait();
 
   // Extract message index from event
-  const event = receipt.logs.find(
-    log => log.topics[0] === contract.interface.getEvent('MessageAdded').topicHash
-  );
-  const decoded = contract.interface.decodeEventLog('MessageAdded', event.data, event.topics);
+  const event = receipt.logs.find((log) => log.topics[0] === contract.interface.getEvent("MessageAdded").topicHash);
+  const decoded = contract.interface.decodeEventLog("MessageAdded", event.data, event.topics);
 
   return decoded.index;
 }
@@ -361,9 +361,9 @@ async function addMessageWithReward(
   payload: Uint8Array,
   keyShare: Uint8Array,
   publicMessage: string | undefined,
-  recipientEmailHashes: `0x${string}`[],  // Poseidon hashes of recipient emails
-  payloadContentHash: `0x${string}`,      // keccak256 of decrypted payload
-  rewardAmount: bigint                    // ETH reward in wei
+  recipientEmailHashes: `0x${string}`[], // Poseidon hashes of recipient emails
+  payloadContentHash: `0x${string}`, // keccak256 of decrypted payload
+  rewardAmount: bigint, // ETH reward in wei
 ): Promise<bigint> {
   // ... same encryption as above ...
 
@@ -373,10 +373,10 @@ async function addMessageWithReward(
     skShareHandle,
     payloadHex,
     inputProof,
-    publicMessage || '',
+    publicMessage || "",
     recipientEmailHashes,
     payloadContentHash,
-    { value: rewardAmount }
+    { value: rewardAmount },
   );
 
   const receipt = await tx.wait();
@@ -414,7 +414,7 @@ async function editMessage(
   newRecipientEmail: string,
   newPayload: Uint8Array,
   newKeyShare: Uint8Array,
-  newPublicMessage?: string
+  newPublicMessage?: string,
 ): Promise<void> {
   // Similar to addMessage but calls editMessage
   const tx = await contract.editMessage(
@@ -424,7 +424,7 @@ async function editMessage(
     skShareHandle,
     payloadHex,
     inputProof,
-    newPublicMessage || ''
+    newPublicMessage || "",
   );
   await tx.wait();
 }
@@ -459,7 +459,7 @@ async function removeCouncilMember(contract: Contract, memberAddress: string): P
 ```typescript
 async function getCouncilMembers(
   contract: Contract,
-  userAddress: string
+  userAddress: string,
 ): Promise<{ members: string[]; joinedAts: bigint[] }> {
   const [members, joinedAts] = await contract.getCouncilMembers(userAddress);
   return { members, joinedAts };
@@ -471,11 +471,7 @@ async function getCouncilMembers(
 During grace period, council members can vote:
 
 ```typescript
-async function voteOnStatus(
-  contract: Contract,
-  userAddress: string,
-  voteAlive: boolean
-): Promise<void> {
+async function voteOnStatus(contract: Contract, userAddress: string, voteAlive: boolean): Promise<void> {
   const tx = await contract.voteOnStatus(userAddress, voteAlive);
   await tx.wait();
 }
@@ -486,15 +482,14 @@ async function voteOnStatus(
 ```typescript
 async function getGraceVoteStatus(
   contract: Contract,
-  userAddress: string
+  userAddress: string,
 ): Promise<{
   aliveVotes: bigint;
   deadVotes: bigint;
   decided: boolean;
   decisionAlive: boolean;
 }> {
-  const [aliveVotes, deadVotes, decided, decisionAlive] =
-    await contract.getGraceVoteStatus(userAddress);
+  const [aliveVotes, deadVotes, decided, decisionAlive] = await contract.getGraceVoteStatus(userAddress);
   return { aliveVotes, deadVotes, decided, decisionAlive };
 }
 ```
@@ -505,14 +500,11 @@ async function getGraceVoteStatus(
 
 ### Claim a Message
 
-After a user is marked deceased, anyone can claim messages. The person who marked the user deceased has a 24-hour exclusivity window.
+After a user is marked deceased, anyone can claim messages. The person who marked the user deceased has a 24-hour
+exclusivity window.
 
 ```typescript
-async function claimMessage(
-  contract: Contract,
-  userAddress: string,
-  messageIndex: bigint
-): Promise<void> {
+async function claimMessage(contract: Contract, userAddress: string, messageIndex: bigint): Promise<void> {
   const tx = await contract.claim(userAddress, messageIndex);
   await tx.wait();
 }
@@ -526,7 +518,7 @@ After claiming, retrieve the encrypted data:
 async function retrieveMessage(
   contract: Contract,
   ownerAddress: string,
-  index: bigint
+  index: bigint,
 ): Promise<{
   skShare: bigint;
   encodedRecipientEmail: bigint[];
@@ -542,7 +534,7 @@ async function retrieveMessage(
     emailByteLen: Number(result.emailByteLen),
     payload: ethers.getBytes(result.payload),
     publicMessage: result.publicMessage,
-    hash: result.hash
+    hash: result.hash,
   };
 }
 ```
@@ -558,13 +550,10 @@ async function decryptMessage(
   emailLimbHandles: bigint[],
   emailByteLen: number,
   contractAddress: string,
-  userAddress: string
+  userAddress: string,
 ): Promise<{ email: string; keyShare: Uint8Array }> {
   // Request decryption from the gateway
-  const decryptedKeyShare = await fhevmInstance.decrypt128(
-    contractAddress,
-    skShareHandle
-  );
+  const decryptedKeyShare = await fhevmInstance.decrypt128(contractAddress, skShareHandle);
 
   // Decrypt email limbs
   const decryptedLimbs: Uint8Array[] = [];
@@ -584,7 +573,7 @@ async function decryptMessage(
 
   return {
     email,
-    keyShare: decryptedKeyShare
+    keyShare: decryptedKeyShare,
   };
 }
 ```
@@ -602,7 +591,7 @@ interface ZkEmailProof {
   pA: [bigint, bigint];
   pB: [[bigint, bigint], [bigint, bigint]];
   pC: [bigint, bigint];
-  publicSignals: bigint[];  // [recipientEmailHash, dkimPubkeyHash, contentHash]
+  publicSignals: bigint[]; // [recipientEmailHash, dkimPubkeyHash, contentHash]
 }
 ```
 
@@ -614,19 +603,14 @@ async function proveDelivery(
   userAddress: string,
   messageIndex: bigint,
   recipientIndex: number,
-  proof: ZkEmailProof
+  proof: ZkEmailProof,
 ): Promise<void> {
-  const tx = await contract.proveDelivery(
-    userAddress,
-    messageIndex,
-    recipientIndex,
-    {
-      pA: proof.pA,
-      pB: proof.pB,
-      pC: proof.pC,
-      publicSignals: proof.publicSignals
-    }
-  );
+  const tx = await contract.proveDelivery(userAddress, messageIndex, recipientIndex, {
+    pA: proof.pA,
+    pB: proof.pB,
+    pC: proof.pC,
+    publicSignals: proof.publicSignals,
+  });
   await tx.wait();
 }
 ```
@@ -637,7 +621,7 @@ async function proveDelivery(
 async function getMessageRewardInfo(
   contract: Contract,
   userAddress: string,
-  messageIndex: bigint
+  messageIndex: bigint,
 ): Promise<{
   reward: bigint;
   numRecipients: bigint;
@@ -649,7 +633,7 @@ async function getMessageRewardInfo(
     reward: result.reward,
     numRecipients: result.numRecipients,
     provenRecipientsBitmap: result.provenRecipientsBitmap,
-    payloadContentHash: result.payloadContentHash
+    payloadContentHash: result.payloadContentHash,
   };
 }
 ```
@@ -678,11 +662,7 @@ async function getDeposit(contract: Contract, userAddress: string): Promise<bigi
 ### Claim Reward (After All Proofs)
 
 ```typescript
-async function claimReward(
-  contract: Contract,
-  userAddress: string,
-  messageIndex: bigint
-): Promise<void> {
+async function claimReward(contract: Contract, userAddress: string, messageIndex: bigint): Promise<void> {
   const tx = await contract.claimReward(userAddress, messageIndex);
   await tx.wait();
 }
@@ -694,15 +674,15 @@ async function claimReward(
 
 ### Common Contract Errors
 
-| Error Message | Cause | Solution |
-|---------------|-------|----------|
-| `"not registered"` | User hasn't registered | Call `register()` first |
-| `"user marked deceased"` | Cannot modify deceased user's data | N/A |
-| `"not timed out"` | Trying to mark deceased too early | Wait for check-in + grace period |
-| `"still exclusive for the notifier"` | Trying to claim within 24h exclusivity | Wait for exclusivity to expire |
-| `"message was revoked"` | Message was revoked by owner | Cannot claim revoked messages |
-| `"not the claimer"` | Trying to retrieve without claiming first | Call `claim()` first |
-| `"not all recipients proven"` | Trying to claim reward before all proofs | Submit remaining proofs |
+| Error Message                        | Cause                                     | Solution                         |
+| ------------------------------------ | ----------------------------------------- | -------------------------------- |
+| `"not registered"`                   | User hasn't registered                    | Call `register()` first          |
+| `"user marked deceased"`             | Cannot modify deceased user's data        | N/A                              |
+| `"not timed out"`                    | Trying to mark deceased too early         | Wait for check-in + grace period |
+| `"still exclusive for the notifier"` | Trying to claim within 24h exclusivity    | Wait for exclusivity to expire   |
+| `"message was revoked"`              | Message was revoked by owner              | Cannot claim revoked messages    |
+| `"not the claimer"`                  | Trying to retrieve without claiming first | Call `claim()` first             |
+| `"not all recipients proven"`        | Trying to claim reward before all proofs  | Submit remaining proofs          |
 
 ### Extracting Revert Reasons
 
@@ -714,7 +694,7 @@ function extractRevertReason(error: unknown): string {
     if (match) return match[1];
 
     // Check for custom error
-    if ('reason' in error) return (error as any).reason;
+    if ("reason" in error) return (error as any).reason;
 
     return error.message;
   }
@@ -730,34 +710,34 @@ Subscribe to contract events for real-time updates:
 
 ```typescript
 // User events
-contract.on('UserRegistered', (user, checkInPeriod, gracePeriod, registeredOn) => {
-  console.log('User registered:', user);
+contract.on("UserRegistered", (user, checkInPeriod, gracePeriod, registeredOn) => {
+  console.log("User registered:", user);
 });
 
-contract.on('Ping', (user, when) => {
-  console.log('User pinged:', user);
+contract.on("Ping", (user, when) => {
+  console.log("User pinged:", user);
 });
 
-contract.on('Deceased', (user, when, notifier) => {
-  console.log('User marked deceased:', user, 'by', notifier);
+contract.on("Deceased", (user, when, notifier) => {
+  console.log("User marked deceased:", user, "by", notifier);
 });
 
 // Message events
-contract.on('MessageAdded', (user, index) => {
-  console.log('Message added:', user, 'index:', index);
+contract.on("MessageAdded", (user, index) => {
+  console.log("Message added:", user, "index:", index);
 });
 
-contract.on('Claimed', (user, index, claimer) => {
-  console.log('Message claimed:', user, 'index:', index, 'by:', claimer);
+contract.on("Claimed", (user, index, claimer) => {
+  console.log("Message claimed:", user, "index:", index, "by:", claimer);
 });
 
 // Reward events
-contract.on('DeliveryProven', (user, messageIndex, recipientIndex, claimer) => {
-  console.log('Delivery proven:', user, messageIndex, recipientIndex);
+contract.on("DeliveryProven", (user, messageIndex, recipientIndex, claimer) => {
+  console.log("Delivery proven:", user, messageIndex, recipientIndex);
 });
 
-contract.on('RewardClaimed', (user, messageIndex, claimer, amount) => {
-  console.log('Reward claimed:', claimer, 'amount:', amount);
+contract.on("RewardClaimed", (user, messageIndex, claimer, amount) => {
+  console.log("Reward claimed:", claimer, "amount:", amount);
 });
 ```
 
@@ -774,11 +754,11 @@ async function farewellWorkflow() {
 
   // 2. Register
   if (!(await contract.isRegistered(userAddress))) {
-    await register(contract, 'My Name', 30 * 24 * 3600, 7 * 24 * 3600);
+    await register(contract, "My Name", 30 * 24 * 3600, 7 * 24 * 3600);
   }
 
   // 3. Add a message
-  const message = 'Goodbye, my friend. You meant the world to me.';
+  const message = "Goodbye, my friend. You meant the world to me.";
   const aesKey = crypto.getRandomValues(new Uint8Array(16));
   const keyShare = crypto.getRandomValues(new Uint8Array(16));
 
@@ -795,10 +775,10 @@ async function farewellWorkflow() {
   const messageIndex = await addMessage(
     contract,
     fhevmInstance,
-    'recipient@example.com',
+    "recipient@example.com",
     encrypted,
-    keyShare,  // s (stored on-chain encrypted)
-    'A message for when I\'m gone'
+    keyShare, // s (stored on-chain encrypted)
+    "A message for when I'm gone",
   );
 
   // 4. Ping periodically
@@ -814,15 +794,19 @@ async function farewellWorkflow() {
 ## Additional Resources
 
 ### Live Demos and Tools
+
 - **Farewell Web UI**: [farewell.world](https://farewell.world)
 - **Farewell Claimer**: [github.com/farewell-world/farewell-claimer](https://github.com/farewell-world/farewell-claimer)
-- **Farewell Decrypter**: [github.com/farewell-world/farewell-decrypter](https://github.com/farewell-world/farewell-decrypter)
+- **Farewell Decrypter**:
+  [github.com/farewell-world/farewell-decrypter](https://github.com/farewell-world/farewell-decrypter)
 
 ### External Documentation
+
 - **Zama FHEVM Docs**: [docs.zama.ai/fhevm](https://docs.zama.ai/fhevm)
 - **zk-email**: [prove.email](https://prove.email)
 
 ### Related Documentation
+
 - [Protocol Specification](protocol.md)
 - [Contract API Reference](contract-api.md)
 - [Delivery Proof Architecture](proof-structure.md)

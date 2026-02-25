@@ -3,10 +3,7 @@
 /* eslint-disable */
 
 import { Contract, Interface, type ContractRunner } from "ethers";
-import type {
-  IACL,
-  IACLInterface,
-} from "../../../../../@fhevm/solidity/lib/Impl.sol/IACL";
+import type { IACL, IACLInterface } from "../../../../../@fhevm/solidity/lib/Impl.sol/IACL";
 
 const _abi = [
   {

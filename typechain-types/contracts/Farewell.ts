@@ -29,10 +29,10 @@ export declare namespace Farewell {
     notifierAddress: AddressLike;
   };
 
-  export type NotifierStructOutput = [
-    notificationTime: bigint,
-    notifierAddress: string
-  ] & { notificationTime: bigint; notifierAddress: string };
+  export type NotifierStructOutput = [notificationTime: bigint, notifierAddress: string] & {
+    notificationTime: bigint;
+    notifierAddress: string;
+  };
 }
 
 export interface FarewellInterface extends Interface {
@@ -62,7 +62,7 @@ export interface FarewellInterface extends Interface {
       | "retrieve"
       | "transferOwnership"
       | "upgradeToAndCall"
-      | "users"
+      | "users",
   ): FunctionFragment;
 
   getEvent(
@@ -74,188 +74,76 @@ export interface FarewellInterface extends Interface {
       | "OwnershipTransferred"
       | "Ping"
       | "Upgraded"
-      | "UserRegistered"
+      | "UserRegistered",
   ): EventFragment;
 
-  encodeFunctionData(
-    functionFragment: "UPGRADE_INTERFACE_VERSION",
-    values?: undefined
-  ): string;
+  encodeFunctionData(functionFragment: "UPGRADE_INTERFACE_VERSION", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "addMessage(bytes32[],uint32,bytes32,bytes,bytes)",
-    values: [BytesLike[], BigNumberish, BytesLike, BytesLike, BytesLike]
+    values: [BytesLike[], BigNumberish, BytesLike, BytesLike, BytesLike],
   ): string;
   encodeFunctionData(
     functionFragment: "addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)",
-    values: [BytesLike[], BigNumberish, BytesLike, BytesLike, BytesLike, string]
+    values: [BytesLike[], BigNumberish, BytesLike, BytesLike, BytesLike, string],
   ): string;
-  encodeFunctionData(
-    functionFragment: "claim",
-    values: [AddressLike, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "forceDeceased",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getDeceasedStatus",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getLastCheckIn",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getRegisteredOn",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getUserName",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "initialize",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "isRegistered",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "markDeceased",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "messageCount",
-    values: [AddressLike]
-  ): string;
+  encodeFunctionData(functionFragment: "claim", values: [AddressLike, BigNumberish]): string;
+  encodeFunctionData(functionFragment: "forceDeceased", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "getDeceasedStatus", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "getLastCheckIn", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "getRegisteredOn", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "getUserName", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "initialize", values?: undefined): string;
+  encodeFunctionData(functionFragment: "isRegistered", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "markDeceased", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "messageCount", values: [AddressLike]): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(functionFragment: "ping", values?: undefined): string;
-  encodeFunctionData(
-    functionFragment: "proxiableUUID",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "register()",
-    values?: undefined
-  ): string;
+  encodeFunctionData(functionFragment: "proxiableUUID", values?: undefined): string;
+  encodeFunctionData(functionFragment: "register()", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "register(string,uint64,uint64)",
-    values: [string, BigNumberish, BigNumberish]
+    values: [string, BigNumberish, BigNumberish],
   ): string;
-  encodeFunctionData(
-    functionFragment: "register(uint64,uint64)",
-    values: [BigNumberish, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "register(string)",
-    values: [string]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "renounceOwnership",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "retrieve",
-    values: [AddressLike, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "transferOwnership",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "upgradeToAndCall",
-    values: [AddressLike, BytesLike]
-  ): string;
+  encodeFunctionData(functionFragment: "register(uint64,uint64)", values: [BigNumberish, BigNumberish]): string;
+  encodeFunctionData(functionFragment: "register(string)", values: [string]): string;
+  encodeFunctionData(functionFragment: "renounceOwnership", values?: undefined): string;
+  encodeFunctionData(functionFragment: "retrieve", values: [AddressLike, BigNumberish]): string;
+  encodeFunctionData(functionFragment: "transferOwnership", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "upgradeToAndCall", values: [AddressLike, BytesLike]): string;
   encodeFunctionData(functionFragment: "users", values: [AddressLike]): string;
 
-  decodeFunctionResult(
-    functionFragment: "UPGRADE_INTERFACE_VERSION",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "addMessage(bytes32[],uint32,bytes32,bytes,bytes)",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "UPGRADE_INTERFACE_VERSION", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "addMessage(bytes32[],uint32,bytes32,bytes,bytes)", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)",
-    data: BytesLike
+    data: BytesLike,
   ): Result;
   decodeFunctionResult(functionFragment: "claim", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "forceDeceased",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getDeceasedStatus",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getLastCheckIn",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getRegisteredOn",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getUserName",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "forceDeceased", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getDeceasedStatus", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getLastCheckIn", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getRegisteredOn", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getUserName", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "initialize", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "isRegistered",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "markDeceased",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "messageCount",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "isRegistered", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "markDeceased", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "messageCount", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ping", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "proxiableUUID",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "proxiableUUID", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "register()", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "register(string,uint64,uint64)",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "register(uint64,uint64)",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "register(string)",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "renounceOwnership",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "register(string,uint64,uint64)", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "register(uint64,uint64)", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "register(string)", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "renounceOwnership", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "retrieve", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "transferOwnership",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "upgradeToAndCall",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "transferOwnership", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "upgradeToAndCall", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "users", data: BytesLike): Result;
 }
 
 export namespace ClaimedEvent {
-  export type InputTuple = [
-    user: AddressLike,
-    index: BigNumberish,
-    claimer: AddressLike
-  ];
+  export type InputTuple = [user: AddressLike, index: BigNumberish, claimer: AddressLike];
   export type OutputTuple = [user: string, index: bigint, claimer: string];
   export interface OutputObject {
     user: string;
@@ -269,11 +157,7 @@ export namespace ClaimedEvent {
 }
 
 export namespace DeceasedEvent {
-  export type InputTuple = [
-    user: AddressLike,
-    when: BigNumberish,
-    notifier: AddressLike
-  ];
+  export type InputTuple = [user: AddressLike, when: BigNumberish, notifier: AddressLike];
   export type OutputTuple = [user: string, when: bigint, notifier: string];
   export interface OutputObject {
     user: string;
@@ -354,14 +238,9 @@ export namespace UserRegisteredEvent {
     user: AddressLike,
     checkInPeriod: BigNumberish,
     gracePeriod: BigNumberish,
-    registeredOn: BigNumberish
+    registeredOn: BigNumberish,
   ];
-  export type OutputTuple = [
-    user: string,
-    checkInPeriod: bigint,
-    gracePeriod: bigint,
-    registeredOn: bigint
-  ];
+  export type OutputTuple = [user: string, checkInPeriod: bigint, gracePeriod: bigint, registeredOn: bigint];
   export interface OutputObject {
     user: string;
     checkInPeriod: bigint;
@@ -383,50 +262,34 @@ export interface Farewell extends BaseContract {
   queryFilter<TCEvent extends TypedContractEvent>(
     event: TCEvent,
     fromBlockOrBlockhash?: string | number | undefined,
-    toBlock?: string | number | undefined
+    toBlock?: string | number | undefined,
   ): Promise<Array<TypedEventLog<TCEvent>>>;
   queryFilter<TCEvent extends TypedContractEvent>(
     filter: TypedDeferredTopicFilter<TCEvent>,
     fromBlockOrBlockhash?: string | number | undefined,
-    toBlock?: string | number | undefined
+    toBlock?: string | number | undefined,
   ): Promise<Array<TypedEventLog<TCEvent>>>;
 
-  on<TCEvent extends TypedContractEvent>(
-    event: TCEvent,
-    listener: TypedListener<TCEvent>
-  ): Promise<this>;
+  on<TCEvent extends TypedContractEvent>(event: TCEvent, listener: TypedListener<TCEvent>): Promise<this>;
   on<TCEvent extends TypedContractEvent>(
     filter: TypedDeferredTopicFilter<TCEvent>,
-    listener: TypedListener<TCEvent>
+    listener: TypedListener<TCEvent>,
   ): Promise<this>;
 
-  once<TCEvent extends TypedContractEvent>(
-    event: TCEvent,
-    listener: TypedListener<TCEvent>
-  ): Promise<this>;
+  once<TCEvent extends TypedContractEvent>(event: TCEvent, listener: TypedListener<TCEvent>): Promise<this>;
   once<TCEvent extends TypedContractEvent>(
     filter: TypedDeferredTopicFilter<TCEvent>,
-    listener: TypedListener<TCEvent>
+    listener: TypedListener<TCEvent>,
   ): Promise<this>;
 
-  listeners<TCEvent extends TypedContractEvent>(
-    event: TCEvent
-  ): Promise<Array<TypedListener<TCEvent>>>;
+  listeners<TCEvent extends TypedContractEvent>(event: TCEvent): Promise<Array<TypedListener<TCEvent>>>;
   listeners(eventName?: string): Promise<Array<Listener>>;
-  removeAllListeners<TCEvent extends TypedContractEvent>(
-    event?: TCEvent
-  ): Promise<this>;
+  removeAllListeners<TCEvent extends TypedContractEvent>(event?: TCEvent): Promise<this>;
 
   UPGRADE_INTERFACE_VERSION: TypedContractMethod<[], [string], "view">;
 
   "addMessage(bytes32[],uint32,bytes32,bytes,bytes)": TypedContractMethod<
-    [
-      limbs: BytesLike[],
-      emailByteLen: BigNumberish,
-      encSkShare: BytesLike,
-      payload: BytesLike,
-      inputProof: BytesLike
-    ],
+    [limbs: BytesLike[], emailByteLen: BigNumberish, encSkShare: BytesLike, payload: BytesLike, inputProof: BytesLike],
     [bigint],
     "nonpayable"
   >;
@@ -438,25 +301,17 @@ export interface Farewell extends BaseContract {
       encSkShare: BytesLike,
       payload: BytesLike,
       inputProof: BytesLike,
-      publicMessage: string
+      publicMessage: string,
     ],
     [bigint],
     "nonpayable"
   >;
 
-  claim: TypedContractMethod<
-    [user: AddressLike, index: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
+  claim: TypedContractMethod<[user: AddressLike, index: BigNumberish], [void], "nonpayable">;
 
   forceDeceased: TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
 
-  getDeceasedStatus: TypedContractMethod<
-    [user: AddressLike],
-    [boolean],
-    "view"
-  >;
+  getDeceasedStatus: TypedContractMethod<[user: AddressLike], [boolean], "view">;
 
   getLastCheckIn: TypedContractMethod<[user: AddressLike], [bigint], "view">;
 
@@ -505,35 +360,19 @@ export interface Farewell extends BaseContract {
         emailByteLen: bigint;
         payload: string;
         publicMessage: string;
-      }
+      },
     ],
     "view"
   >;
 
-  transferOwnership: TypedContractMethod<
-    [newOwner: AddressLike],
-    [void],
-    "nonpayable"
-  >;
+  transferOwnership: TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
 
-  upgradeToAndCall: TypedContractMethod<
-    [newImplementation: AddressLike, data: BytesLike],
-    [void],
-    "payable"
-  >;
+  upgradeToAndCall: TypedContractMethod<[newImplementation: AddressLike, data: BytesLike], [void], "payable">;
 
   users: TypedContractMethod<
     [arg0: AddressLike],
     [
-      [
-        string,
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        boolean,
-        Farewell.NotifierStructOutput
-      ] & {
+      [string, bigint, bigint, bigint, bigint, boolean, Farewell.NotifierStructOutput] & {
         name: string;
         checkInPeriod: bigint;
         gracePeriod: bigint;
@@ -541,33 +380,23 @@ export interface Farewell extends BaseContract {
         registeredOn: bigint;
         deceased: boolean;
         notifier: Farewell.NotifierStructOutput;
-      }
+      },
     ],
     "view"
   >;
 
-  getFunction<T extends ContractMethod = ContractMethod>(
-    key: string | FunctionFragment
-  ): T;
+  getFunction<T extends ContractMethod = ContractMethod>(key: string | FunctionFragment): T;
 
+  getFunction(nameOrSignature: "UPGRADE_INTERFACE_VERSION"): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "UPGRADE_INTERFACE_VERSION"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "addMessage(bytes32[],uint32,bytes32,bytes,bytes)"
+    nameOrSignature: "addMessage(bytes32[],uint32,bytes32,bytes,bytes)",
   ): TypedContractMethod<
-    [
-      limbs: BytesLike[],
-      emailByteLen: BigNumberish,
-      encSkShare: BytesLike,
-      payload: BytesLike,
-      inputProof: BytesLike
-    ],
+    [limbs: BytesLike[], emailByteLen: BigNumberish, encSkShare: BytesLike, payload: BytesLike, inputProof: BytesLike],
     [bigint],
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)"
+    nameOrSignature: "addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)",
   ): TypedContractMethod<
     [
       limbs: BytesLike[],
@@ -575,80 +404,36 @@ export interface Farewell extends BaseContract {
       encSkShare: BytesLike,
       payload: BytesLike,
       inputProof: BytesLike,
-      publicMessage: string
+      publicMessage: string,
     ],
     [bigint],
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "claim"
-  ): TypedContractMethod<
-    [user: AddressLike, index: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
+    nameOrSignature: "claim",
+  ): TypedContractMethod<[user: AddressLike, index: BigNumberish], [void], "nonpayable">;
+  getFunction(nameOrSignature: "forceDeceased"): TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
+  getFunction(nameOrSignature: "getDeceasedStatus"): TypedContractMethod<[user: AddressLike], [boolean], "view">;
+  getFunction(nameOrSignature: "getLastCheckIn"): TypedContractMethod<[user: AddressLike], [bigint], "view">;
+  getFunction(nameOrSignature: "getRegisteredOn"): TypedContractMethod<[user: AddressLike], [bigint], "view">;
+  getFunction(nameOrSignature: "getUserName"): TypedContractMethod<[user: AddressLike], [string], "view">;
+  getFunction(nameOrSignature: "initialize"): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(nameOrSignature: "isRegistered"): TypedContractMethod<[user: AddressLike], [boolean], "view">;
+  getFunction(nameOrSignature: "markDeceased"): TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
+  getFunction(nameOrSignature: "messageCount"): TypedContractMethod<[user: AddressLike], [bigint], "view">;
+  getFunction(nameOrSignature: "owner"): TypedContractMethod<[], [string], "view">;
+  getFunction(nameOrSignature: "ping"): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(nameOrSignature: "proxiableUUID"): TypedContractMethod<[], [string], "view">;
+  getFunction(nameOrSignature: "register()"): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "forceDeceased"
-  ): TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
+    nameOrSignature: "register(string,uint64,uint64)",
+  ): TypedContractMethod<[name: string, checkInPeriod: BigNumberish, gracePeriod: BigNumberish], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "getDeceasedStatus"
-  ): TypedContractMethod<[user: AddressLike], [boolean], "view">;
-  getFunction(
-    nameOrSignature: "getLastCheckIn"
-  ): TypedContractMethod<[user: AddressLike], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "getRegisteredOn"
-  ): TypedContractMethod<[user: AddressLike], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "getUserName"
-  ): TypedContractMethod<[user: AddressLike], [string], "view">;
-  getFunction(
-    nameOrSignature: "initialize"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "isRegistered"
-  ): TypedContractMethod<[user: AddressLike], [boolean], "view">;
-  getFunction(
-    nameOrSignature: "markDeceased"
-  ): TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "messageCount"
-  ): TypedContractMethod<[user: AddressLike], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "owner"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "ping"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "proxiableUUID"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "register()"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "register(string,uint64,uint64)"
-  ): TypedContractMethod<
-    [name: string, checkInPeriod: BigNumberish, gracePeriod: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "register(uint64,uint64)"
-  ): TypedContractMethod<
-    [checkInPeriod: BigNumberish, gracePeriod: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "register(string)"
-  ): TypedContractMethod<[name: string], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "renounceOwnership"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "retrieve"
-  ): TypedContractMethod<
+    nameOrSignature: "register(uint64,uint64)",
+  ): TypedContractMethod<[checkInPeriod: BigNumberish, gracePeriod: BigNumberish], [void], "nonpayable">;
+  getFunction(nameOrSignature: "register(string)"): TypedContractMethod<[name: string], [void], "nonpayable">;
+  getFunction(nameOrSignature: "renounceOwnership"): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(nameOrSignature: "retrieve"): TypedContractMethod<
     [owner: AddressLike, index: BigNumberish],
     [
       [string, string[], bigint, string, string] & {
@@ -657,34 +442,18 @@ export interface Farewell extends BaseContract {
         emailByteLen: bigint;
         payload: string;
         publicMessage: string;
-      }
+      },
     ],
     "view"
   >;
+  getFunction(nameOrSignature: "transferOwnership"): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "transferOwnership"
-  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "upgradeToAndCall"
-  ): TypedContractMethod<
-    [newImplementation: AddressLike, data: BytesLike],
-    [void],
-    "payable"
-  >;
-  getFunction(
-    nameOrSignature: "users"
-  ): TypedContractMethod<
+    nameOrSignature: "upgradeToAndCall",
+  ): TypedContractMethod<[newImplementation: AddressLike, data: BytesLike], [void], "payable">;
+  getFunction(nameOrSignature: "users"): TypedContractMethod<
     [arg0: AddressLike],
     [
-      [
-        string,
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        boolean,
-        Farewell.NotifierStructOutput
-      ] & {
+      [string, bigint, bigint, bigint, bigint, boolean, Farewell.NotifierStructOutput] & {
         name: string;
         checkInPeriod: bigint;
         gracePeriod: bigint;
@@ -692,62 +461,36 @@ export interface Farewell extends BaseContract {
         registeredOn: bigint;
         deceased: boolean;
         notifier: Farewell.NotifierStructOutput;
-      }
+      },
     ],
     "view"
   >;
 
   getEvent(
-    key: "Claimed"
-  ): TypedContractEvent<
-    ClaimedEvent.InputTuple,
-    ClaimedEvent.OutputTuple,
-    ClaimedEvent.OutputObject
-  >;
+    key: "Claimed",
+  ): TypedContractEvent<ClaimedEvent.InputTuple, ClaimedEvent.OutputTuple, ClaimedEvent.OutputObject>;
   getEvent(
-    key: "Deceased"
-  ): TypedContractEvent<
-    DeceasedEvent.InputTuple,
-    DeceasedEvent.OutputTuple,
-    DeceasedEvent.OutputObject
-  >;
+    key: "Deceased",
+  ): TypedContractEvent<DeceasedEvent.InputTuple, DeceasedEvent.OutputTuple, DeceasedEvent.OutputObject>;
   getEvent(
-    key: "Initialized"
-  ): TypedContractEvent<
-    InitializedEvent.InputTuple,
-    InitializedEvent.OutputTuple,
-    InitializedEvent.OutputObject
-  >;
+    key: "Initialized",
+  ): TypedContractEvent<InitializedEvent.InputTuple, InitializedEvent.OutputTuple, InitializedEvent.OutputObject>;
   getEvent(
-    key: "MessageAdded"
-  ): TypedContractEvent<
-    MessageAddedEvent.InputTuple,
-    MessageAddedEvent.OutputTuple,
-    MessageAddedEvent.OutputObject
-  >;
+    key: "MessageAdded",
+  ): TypedContractEvent<MessageAddedEvent.InputTuple, MessageAddedEvent.OutputTuple, MessageAddedEvent.OutputObject>;
   getEvent(
-    key: "OwnershipTransferred"
+    key: "OwnershipTransferred",
   ): TypedContractEvent<
     OwnershipTransferredEvent.InputTuple,
     OwnershipTransferredEvent.OutputTuple,
     OwnershipTransferredEvent.OutputObject
   >;
+  getEvent(key: "Ping"): TypedContractEvent<PingEvent.InputTuple, PingEvent.OutputTuple, PingEvent.OutputObject>;
   getEvent(
-    key: "Ping"
-  ): TypedContractEvent<
-    PingEvent.InputTuple,
-    PingEvent.OutputTuple,
-    PingEvent.OutputObject
-  >;
+    key: "Upgraded",
+  ): TypedContractEvent<UpgradedEvent.InputTuple, UpgradedEvent.OutputTuple, UpgradedEvent.OutputObject>;
   getEvent(
-    key: "Upgraded"
-  ): TypedContractEvent<
-    UpgradedEvent.InputTuple,
-    UpgradedEvent.OutputTuple,
-    UpgradedEvent.OutputObject
-  >;
-  getEvent(
-    key: "UserRegistered"
+    key: "UserRegistered",
   ): TypedContractEvent<
     UserRegisteredEvent.InputTuple,
     UserRegisteredEvent.OutputTuple,
@@ -760,22 +503,14 @@ export interface Farewell extends BaseContract {
       ClaimedEvent.OutputTuple,
       ClaimedEvent.OutputObject
     >;
-    Claimed: TypedContractEvent<
-      ClaimedEvent.InputTuple,
-      ClaimedEvent.OutputTuple,
-      ClaimedEvent.OutputObject
-    >;
+    Claimed: TypedContractEvent<ClaimedEvent.InputTuple, ClaimedEvent.OutputTuple, ClaimedEvent.OutputObject>;
 
     "Deceased(address,uint64,address)": TypedContractEvent<
       DeceasedEvent.InputTuple,
       DeceasedEvent.OutputTuple,
       DeceasedEvent.OutputObject
     >;
-    Deceased: TypedContractEvent<
-      DeceasedEvent.InputTuple,
-      DeceasedEvent.OutputTuple,
-      DeceasedEvent.OutputObject
-    >;
+    Deceased: TypedContractEvent<DeceasedEvent.InputTuple, DeceasedEvent.OutputTuple, DeceasedEvent.OutputObject>;
 
     "Initialized(uint64)": TypedContractEvent<
       InitializedEvent.InputTuple,
@@ -810,27 +545,15 @@ export interface Farewell extends BaseContract {
       OwnershipTransferredEvent.OutputObject
     >;
 
-    "Ping(address,uint64)": TypedContractEvent<
-      PingEvent.InputTuple,
-      PingEvent.OutputTuple,
-      PingEvent.OutputObject
-    >;
-    Ping: TypedContractEvent<
-      PingEvent.InputTuple,
-      PingEvent.OutputTuple,
-      PingEvent.OutputObject
-    >;
+    "Ping(address,uint64)": TypedContractEvent<PingEvent.InputTuple, PingEvent.OutputTuple, PingEvent.OutputObject>;
+    Ping: TypedContractEvent<PingEvent.InputTuple, PingEvent.OutputTuple, PingEvent.OutputObject>;
 
     "Upgraded(address)": TypedContractEvent<
       UpgradedEvent.InputTuple,
       UpgradedEvent.OutputTuple,
       UpgradedEvent.OutputObject
     >;
-    Upgraded: TypedContractEvent<
-      UpgradedEvent.InputTuple,
-      UpgradedEvent.OutputTuple,
-      UpgradedEvent.OutputObject
-    >;
+    Upgraded: TypedContractEvent<UpgradedEvent.InputTuple, UpgradedEvent.OutputTuple, UpgradedEvent.OutputObject>;
 
     "UserRegistered(address,uint64,uint64,uint64)": TypedContractEvent<
       UserRegisteredEvent.InputTuple,

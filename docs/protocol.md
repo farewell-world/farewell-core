@@ -1,18 +1,25 @@
 # Farewell Protocol Specification
 
-This document provides a complete technical specification of the Farewell protocol, including user lifecycle management, message encryption, cryptographic key sharing, FHE integration, claiming workflows, delivery verification, and the council voting system.
+This document provides a complete technical specification of the Farewell protocol, including user lifecycle management,
+message encryption, cryptographic key sharing, FHE integration, claiming workflows, delivery verification, and the
+council voting system.
 
 ## 1. Overview
 
-Farewell is a decentralized protocol for posthumous encrypted messages using Fully Homomorphic Encryption (FHE) on Ethereum. The protocol is designed around three core principles:
+Farewell is a decentralized protocol for posthumous encrypted messages using Fully Homomorphic Encryption (FHE) on
+Ethereum. The protocol is designed around three core principles:
 
-1. **No central operator**: The protocol runs entirely on-chain via a smart contract. Once messages are stored, they persist indefinitely without depending on any service.
+1. **No central operator**: The protocol runs entirely on-chain via a smart contract. Once messages are stored, they
+   persist indefinitely without depending on any service.
 
-2. **Blockchain persistence**: Messages are cryptographically committed to the blockchain, making them tamper-proof and permanently available once released.
+2. **Blockchain persistence**: Messages are cryptographically committed to the blockchain, making them tamper-proof and
+   permanently available once released.
 
-3. **Encryption and access control**: Messages remain encrypted until a user stops checking in (liveness timeout), after which council members and the contract can prove the user is deceased and release messages to authorized claimers.
+3. **Encryption and access control**: Messages remain encrypted until a user stops checking in (liveness timeout), after
+   which council members and the contract can prove the user is deceased and release messages to authorized claimers.
 
 The protocol combines:
+
 - **Zama FHEVM** for on-chain encryption of sensitive fields (recipient emails, key shares)
 - **AES-128-GCM** for client-side encryption of message payloads
 - **Groth16 zero-knowledge proofs** (via zk-email) for proof-of-delivery
@@ -30,10 +37,10 @@ Users progress through four possible states:
 
 ```solidity
 enum UserStatus {
-    Alive,       // Within current check-in period
-    Grace,       // Check-in period expired, within grace period
-    Deceased,    // User marked deceased (grace period expired or finalized)
-    FinalAlive   // Council voted alive, timer reset
+  Alive, // Within current check-in period
+  Grace, // Check-in period expired, within grace period
+  Deceased, // User marked deceased (grace period expired or finalized)
+  FinalAlive // Council voted alive, timer reset
 }
 ```
 
@@ -99,6 +106,7 @@ function register(
 ```
 
 Parameters:
+
 - `name`: Display name (max 100 bytes)
 - `checkInPeriod`: Minimum time between pings (min 1 day, max ~50 years)
 - `gracePeriod`: Time for council voting after timeout (min 1 day, max ~50 years)
@@ -114,6 +122,7 @@ function ping() external
 ```
 
 Effects:
+
 - Resets `lastPing` to current block timestamp
 - If user was in Grace: reverts to Alive
 - If user was in FinalAlive: clears council votes, resets to Alive
@@ -122,17 +131,20 @@ Event: `Ping(user, when)`
 
 ### 2.5 Marking Deceased
 
-After both `checkInPeriod` and `gracePeriod` have expired without a ping or council decision, anyone can mark the user deceased:
+After both `checkInPeriod` and `gracePeriod` have expired without a ping or council decision, anyone can mark the user
+deceased:
 
 ```solidity
 function markDeceased(address user) external
 ```
 
 Requirements:
+
 - `block.timestamp >= lastPing[user] + checkInPeriod[user] + gracePeriod[user]`
 - User status must not be FinalAlive
 
 Effects:
+
 - Sets `status[user] = Deceased`
 - Records the caller as the "notifier" (eligible for 24-hour claim priority)
 - Messages become claimable
@@ -145,7 +157,8 @@ Event: `Deceased(user, when, notifier)`
 
 ### 3.1 Client-Side Encryption (AES-128-GCM)
 
-Messages are encrypted client-side using AES-128-GCM before submission to the contract. This is critical because all data stored on-chain is publicly visible.
+Messages are encrypted client-side using AES-128-GCM before submission to the contract. This is critical because all
+data stored on-chain is publicly visible.
 
 #### Packed Format
 
@@ -162,6 +175,7 @@ AES-128-GCM ciphertexts are packed into a single hex string:
 Total overhead: 28 bytes (12-byte IV + 16-byte authentication tag)
 
 Example:
+
 ```
 0xAB12...CD | 000102030405060708090A0B | 48656C6C6F 20576F726C64 | 0102030405060708090A0B0C0D0E0F10
            └─ IV                      └─ plaintext (hello world)  └─ GCM tag
@@ -170,6 +184,7 @@ Example:
 #### Format Selection
 
 The packed AES format is chosen because:
+
 - Chainable: IV and tag remain in the same field
 - Deterministic: No additional parameters needed for decryption
 - Compact: Minimal on-chain storage
@@ -184,6 +199,7 @@ bytes payload;  // AES-128-GCM encrypted message
 ```
 
 Constraints:
+
 - Maximum 10,240 bytes (10 KB) to prevent spam
 - Publicly visible on-chain (encryption is mandatory)
 - Immutable after creation (cannot be changed, only revoked)
@@ -194,7 +210,9 @@ Constraints:
 
 ### 4.1 Overview
 
-The protocol uses an XOR-based key sharing scheme to prevent decryption until after the user's death. This design ensures that before death, neither the recipient (who has incomplete information) nor on-chain observers can decrypt the message.
+The protocol uses an XOR-based key sharing scheme to prevent decryption until after the user's death. This design
+ensures that before death, neither the recipient (who has incomplete information) nor on-chain observers can decrypt the
+message.
 
 ### 4.2 Key Split Architecture
 
@@ -231,20 +249,24 @@ The protocol uses an XOR-based key sharing scheme to prevent decryption until af
 ### 4.3 Security Properties
 
 **Before user death:**
+
 - Recipient has s' but cannot derive sk without s
 - sk is encrypted on-chain as euint128 via FHE
 - Even contract observers cannot see s or sk (FHE hides plaintext)
 - Message remains secure
 
 **After user death:**
+
 - Claimer retrieves encrypted s via FHE.allow()
 - Recipient gets s and uses their off-chain s' to compute sk
 - Only the intended recipient can reconstruct sk and decrypt M
 
 **Attack resistance:**
+
 - Attacker with only s' cannot decrypt (needs s)
 - Attacker with only enc(s) cannot decrypt (FHE keeps s hidden)
-- Attacker with both s' and enc(s) still cannot proceed without FHE decryption capability (granted only to claimed recipients)
+- Attacker with both s' and enc(s) still cannot proceed without FHE decryption capability (granted only to claimed
+  recipients)
 
 ---
 
@@ -252,7 +274,8 @@ The protocol uses an XOR-based key sharing scheme to prevent decryption until af
 
 ### 5.1 Email Encryption
 
-Recipient emails are encrypted using Zama's FHEVM. To prevent length-based leakage attacks, all emails are first padded to a fixed length.
+Recipient emails are encrypted using Zama's FHEVM. To prevent length-based leakage attacks, all emails are first padded
+to a fixed length.
 
 #### Padding and Limb Structure
 
@@ -290,6 +313,7 @@ Recipient emails are encrypted using Zama's FHEVM. To prevent length-based leaka
 ```
 
 **Why this approach:**
+
 - **Prevents length leakage**: All emails appear 224 bytes (even "a@b.c")
 - **euint256 is 256 bits**: Each 32-byte limb fits exactly in one euint256
 - **No overflow**: 7 × 256 = 1792 bits out of FHEVM's 2048-bit limit
@@ -304,6 +328,7 @@ euint128 encSkShare;  // FHE-encrypted 128-bit key share
 ```
 
 Total FHE input per message:
+
 - 7 × euint256 (recipient email limbs) = 1792 bits
 - 1 × euint128 (key share) = 128 bits
 - **Total = 1920 bits** (within 2048-bit FHEVM limit)
@@ -313,6 +338,7 @@ Total FHE input per message:
 Messages are stored with restricted FHE visibility:
 
 **Initial state (message just added):**
+
 ```
 Message owner: Can FHE-decrypt email limbs and key share
 Contract: Can manage FHE permissions but not decrypt
@@ -320,6 +346,7 @@ Claimer: No access
 ```
 
 **After claim(user, messageIndex):**
+
 ```
 FHE.allow(encSkShare, claimer);           // Grant access to key share
 FHE.allow(encRecipientEmail[i], claimer); // Grant access to each email limb
@@ -333,7 +360,8 @@ The FHE.allow() call is irreversible — once a claimer is granted access, it ca
 
 ### 6.1 Claim Exclusivity Window
 
-After markDeceased() is called, the caller (notifier) receives a 24-hour priority window to claim messages before anyone else can:
+After markDeceased() is called, the caller (notifier) receives a 24-hour priority window to claim messages before anyone
+else can:
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -355,7 +383,8 @@ After markDeceased() is called, the caller (notifier) receives a 24-hour priorit
 └──────────────────────────────────────────────────┘
 ```
 
-Purpose: Incentivize good-faith notification of death and allow original notifier first access to attach delivery proofs.
+Purpose: Incentivize good-faith notification of death and allow original notifier first access to attach delivery
+proofs.
 
 ### 6.2 Claim Operation
 
@@ -364,12 +393,14 @@ function claim(address user, uint256 index) external
 ```
 
 Requirements:
+
 - User must be Deceased
 - Message must not already be claimed
 - Caller must either be notifier (within 24h) or 24h has passed
 - User must still be deceased (not revived by recovery mechanism)
 
 Effects:
+
 - Sets `claimed[user][index] = true`
 - Calls `FHE.allow()` to grant caller decryption access:
   ```solidity
@@ -396,10 +427,12 @@ function retrieve(address owner, uint256 index) external view
 ```
 
 Requirements:
+
 - Message must be claimed by caller (FHE access granted)
 - Returns the encrypted data and metadata
 
 Process:
+
 1. User supplies the claimed message
 2. Contract returns FHE-encrypted email limbs and key share (only callable by claimer due to FHE permissions)
 3. Claimer's client-side FHEVM library decrypts the email and key share locally
@@ -409,7 +442,8 @@ Process:
 
 ## 7. Claim Package Format
 
-The claim package is a JSON file downloaded after claiming a message. It contains all the data needed for delivery verification and recipient decryption.
+The claim package is a JSON file downloaded after claiming a message. It contains all the data needed for delivery
+verification and recipient decryption.
 
 ### 7.1 Claim Package Structure
 
@@ -419,10 +453,7 @@ The claim package is a JSON file downloaded after claiming a message. It contain
   "version": 1,
   "owner": "0x1234567890123456789012345678901234567890",
   "messageIndex": 0,
-  "recipients": [
-    "alice@example.com",
-    "bob@example.com"
-  ],
+  "recipients": ["alice@example.com", "bob@example.com"],
   "skShare": "0x75554596171405abc...",
   "encryptedPayload": "0xab12...cd",
   "contentHash": "0x1234567890abcdef...",
@@ -432,17 +463,17 @@ The claim package is a JSON file downloaded after claiming a message. It contain
 
 ### 7.2 Field Reference
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `type` | string | Must be `"farewell-claim-package"` (format identifier for claimer tool) |
-| `version` | number | Schema version for backward compatibility (currently 1) |
-| `owner` | address | Message creator's wallet address |
-| `messageIndex` | number | Index in owner's message array |
-| `recipients` | string[] | Email addresses to receive the message |
-| `skShare` | hex | FHE-decrypted on-chain half of AES-128 key (128 bits) |
-| `encryptedPayload` | hex | AES-128-GCM encrypted message (packed format) |
-| `contentHash` | hex | keccak256 of plaintext message (for proof verification) |
-| `subject` | string | Email subject line |
+| Field              | Type     | Purpose                                                                 |
+| ------------------ | -------- | ----------------------------------------------------------------------- |
+| `type`             | string   | Must be `"farewell-claim-package"` (format identifier for claimer tool) |
+| `version`          | number   | Schema version for backward compatibility (currently 1)                 |
+| `owner`            | address  | Message creator's wallet address                                        |
+| `messageIndex`     | number   | Index in owner's message array                                          |
+| `recipients`       | string[] | Email addresses to receive the message                                  |
+| `skShare`          | hex      | FHE-decrypted on-chain half of AES-128 key (128 bits)                   |
+| `encryptedPayload` | hex      | AES-128-GCM encrypted message (packed format)                           |
+| `contentHash`      | hex      | keccak256 of plaintext message (for proof verification)                 |
+| `subject`          | string   | Email subject line                                                      |
 
 ### 7.3 Data Flow
 
@@ -488,11 +519,13 @@ reward = BASE_REWARD + REWARD_PER_KB × ceil(payloadSize / 1024)
 ```
 
 where:
+
 - `BASE_REWARD = 0.01 ETH`
 - `REWARD_PER_KB = 0.005 ETH`
 - `payloadSize = encryptedPayload.length` in bytes
 
 Example: 5 KB payload
+
 ```
 payloadSize = 5120 bytes
 ceil(5120 / 1024) = 5 KB
@@ -534,11 +567,13 @@ function claimReward(address user, uint256 messageIndex) external
 ```
 
 Requirements:
+
 - All recipients must be proven: `provenRecipientsBitmap == (2^numRecipients - 1)`
 - Caller must be the message claimer
 - Reward has not already been claimed
 
 Effects:
+
 - Transfers locked reward to claimer
 - Clears reward amount to prevent double-claiming
 
@@ -565,11 +600,13 @@ function addCouncilMember(address member) external
 ```
 
 Requirements:
+
 - Caller must be the user
 - Member must not already be on council
 - Council size must be less than 20
 
 Effects:
+
 - Adds member to user's council
 - Member can now vote during grace periods
 
@@ -580,6 +617,7 @@ function removeCouncilMember(address member) external
 ```
 
 Effects:
+
 - Removes member from council
 - Clears any active votes by this member
 
@@ -592,11 +630,13 @@ function voteOnStatus(address user, bool voteAlive) external
 ```
 
 Requirements:
+
 - Caller must be a council member of user
 - User must currently be in Grace status
 - Caller must not have already voted on this grace period
 
 Effects:
+
 - Records vote (alive or deceased)
 - May trigger immediate resolution if majority is reached
 
@@ -662,9 +702,11 @@ if (deadCounts > (councilSize / 2)) {
 
 ## 10. Delivery Proof and ZK-Email
 
-For detailed specifications of the proof format, verification flow, and zk-email integration, see [docs/proof-structure.md](proof-structure.md).
+For detailed specifications of the proof format, verification flow, and zk-email integration, see
+[docs/proof-structure.md](proof-structure.md).
 
 Key concepts:
+
 - **Claim Package**: Downloaded from UI after claiming a message
 - **Delivery**: Claimer uses farewell-claimer tool to send email and generate proof
 - **Proof Format**: Groth16 proof with 3 public signals (recipient hash, DKIM key hash, content hash)
@@ -679,9 +721,11 @@ Key concepts:
 
 #### No Recovery Mechanism
 
-Users marked as Deceased cannot be recovered except via council vote *before* the grace period expires and the Deceased status is finalized.
+Users marked as Deceased cannot be recovered except via council vote _before_ the grace period expires and the Deceased
+status is finalized.
 
 Mitigation:
+
 - Set reasonable grace periods (default 7 days)
 - Use council members as additional liveness confirmation
 
@@ -690,6 +734,7 @@ Mitigation:
 Once `FHE.allow()` grants a claimer access to encrypted data, it cannot be revoked.
 
 Implication:
+
 - Claimers must be trusted (they can FHE-decrypt all recipient emails)
 - No revocation if claimer becomes malicious
 - Separate proof-of-delivery prevents unrewarded claims
@@ -699,6 +744,7 @@ Implication:
 Block timestamps can be manipulated by miners/validators within ~15 seconds.
 
 Impact:
+
 - Low for multi-day check-in periods (30 days default)
 - Negligible compared to protocol timeouts
 - No practical attack vector at current parameter values
@@ -708,6 +754,7 @@ Impact:
 All payloads, emails, and metadata are visible on the blockchain.
 
 Mitigation:
+
 - Mandatory client-side AES encryption of payloads
 - FHE encryption of emails (hidden to network observers)
 - Recipient emails visible in claim package only after claiming
@@ -717,6 +764,7 @@ Mitigation:
 If a user generates a weak AES-128 key sk, encryption is compromised.
 
 Mitigation:
+
 - Client uses Web Crypto API with system randomness (strong entropy)
 - Key derivation from seed phrases uses KDF
 - User education on secure key generation
@@ -726,6 +774,7 @@ Mitigation:
 After the 24-hour notifier exclusivity window, anyone can claim messages. Current implementation allows repeated claims.
 
 Status:
+
 - Beta implementation doesn't prevent this yet
 - Proof-of-delivery framework prevents repeated reward claims
 - Future: Message can be marked delivered/complete after first full proof
@@ -735,6 +784,7 @@ Status:
 Current implementation has a placeholder verifier that accepts all proofs if no verifier is set.
 
 Implication:
+
 - Delivery proofs are not cryptographically verified in beta
 - Cannot claim rewards without proper verifier configured
 - Future: Real Groth16 verifier deployed
@@ -745,16 +795,16 @@ Implication:
 
 All protocol constants are defined in the smart contract:
 
-| Constant | Type | Value | Rationale |
-|----------|------|-------|-----------|
-| `DEFAULT_CHECKIN` | uint64 | 30 days (2,592,000 s) | Default monthly check-in interval |
-| `DEFAULT_GRACE` | uint64 | 7 days (604,800 s) | One week for council voting |
-| `MAX_EMAIL_BYTE_LEN` | uint32 | 224 | Padded email length (7 × 32-byte FHE limbs) |
-| `MAX_PAYLOAD_BYTE_LEN` | uint32 | 10,240 | 10 KB max message size (spam prevention) |
-| `BASE_REWARD` | uint256 | 0.01 ether | Entry fee for delivery proofs |
-| `REWARD_PER_KB` | uint256 | 0.005 ether | Scaling reward for larger messages |
-| `MAX_COUNCIL_SIZE` | uint8 | 20 | Prevents unbounded voting loops |
-| `NOTIFIER_CLAIM_PRIORITY_WINDOW` | uint256 | 24 hours | Exclusivity window for markDeceased caller |
+| Constant                         | Type    | Value                 | Rationale                                   |
+| -------------------------------- | ------- | --------------------- | ------------------------------------------- |
+| `DEFAULT_CHECKIN`                | uint64  | 30 days (2,592,000 s) | Default monthly check-in interval           |
+| `DEFAULT_GRACE`                  | uint64  | 7 days (604,800 s)    | One week for council voting                 |
+| `MAX_EMAIL_BYTE_LEN`             | uint32  | 224                   | Padded email length (7 × 32-byte FHE limbs) |
+| `MAX_PAYLOAD_BYTE_LEN`           | uint32  | 10,240                | 10 KB max message size (spam prevention)    |
+| `BASE_REWARD`                    | uint256 | 0.01 ether            | Entry fee for delivery proofs               |
+| `REWARD_PER_KB`                  | uint256 | 0.005 ether           | Scaling reward for larger messages          |
+| `MAX_COUNCIL_SIZE`               | uint8   | 20                    | Prevents unbounded voting loops             |
+| `NOTIFIER_CLAIM_PRIORITY_WINDOW` | uint256 | 24 hours              | Exclusivity window for markDeceased caller  |
 
 ---
 
@@ -765,27 +815,13 @@ The contract emits the following events:
 ### User Lifecycle Events
 
 ```solidity
-event UserRegistered(
-    address indexed user,
-    uint64 checkInPeriod,
-    uint64 gracePeriod,
-    uint64 registeredOn
-);
+event UserRegistered(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
 
-event UserUpdated(
-    address indexed user,
-    uint64 checkInPeriod,
-    uint64 gracePeriod,
-    uint64 registeredOn
-);
+event UserUpdated(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
 
 event Ping(address indexed user, uint64 when);
 
-event Deceased(
-    address indexed user,
-    uint64 when,
-    address indexed notifier
-);
+event Deceased(address indexed user, uint64 when, address indexed notifier);
 ```
 
 ### Message Events
@@ -797,11 +833,7 @@ event MessageEdited(address indexed user, uint256 indexed index);
 
 event MessageRevoked(address indexed user, uint256 indexed index);
 
-event Claimed(
-    address indexed user,
-    uint256 indexed index,
-    address indexed claimer
-);
+event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
 ```
 
 ### Council Events
@@ -811,11 +843,7 @@ event CouncilMemberAdded(address indexed user, address indexed member);
 
 event CouncilMemberRemoved(address indexed user, address indexed member);
 
-event GraceVoteCast(
-    address indexed user,
-    address indexed voter,
-    bool votedAlive
-);
+event GraceVoteCast(address indexed user, address indexed voter, bool votedAlive);
 
 event StatusDecided(address indexed user, bool isAlive);
 ```
@@ -823,19 +851,9 @@ event StatusDecided(address indexed user, bool isAlive);
 ### Reward Events
 
 ```solidity
-event DeliveryProven(
-    address indexed user,
-    uint256 indexed messageIndex,
-    uint256 recipientIndex,
-    address claimer
-);
+event DeliveryProven(address indexed user, uint256 indexed messageIndex, uint256 recipientIndex, address claimer);
 
-event RewardClaimed(
-    address indexed user,
-    uint256 indexed messageIndex,
-    address indexed claimer,
-    uint256 amount
-);
+event RewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, uint256 amount);
 ```
 
 ### Configuration Events
@@ -843,11 +861,7 @@ event RewardClaimed(
 ```solidity
 event ZkEmailVerifierSet(address verifier);
 
-event DkimKeyUpdated(
-    bytes32 domain,
-    uint256 pubkeyHash,
-    bool trusted
-);
+event DkimKeyUpdated(bytes32 domain, uint256 pubkeyHash, bool trusted);
 ```
 
 ---
@@ -874,12 +888,13 @@ In addition to encrypted payloads, messages can include cleartext:
 
 ```solidity
 struct Message {
-    // ... encrypted fields ...
-    string publicMessage;  // Optional cleartext
+  // ... encrypted fields ...
+  string publicMessage; // Optional cleartext
 }
 ```
 
 Use cases:
+
 - Funeral instructions
 - Memorial text
 - Will preview (without sensitive data)

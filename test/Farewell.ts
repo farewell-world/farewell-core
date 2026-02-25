@@ -26,7 +26,6 @@ async function deployFixture() {
   return { FarewellContract, FarewellContractAddress };
 }
 
-
 // --- helpers ---
 const toBytes = (s: string) => ethers.toUtf8Bytes(s);
 
@@ -43,7 +42,7 @@ function chunk32ToU256Words(u8: Uint8Array, padToMax: boolean = true): bigint[] 
   } else {
     padded = u8;
   }
-  
+
   const words: bigint[] = [];
   for (let i = 0; i < padded.length; i += 32) {
     const slice = padded.subarray(i, i + 32);
@@ -137,7 +136,7 @@ describe("Farewell", function () {
         emailBytes1.length, // emailByteLen
         skShareHandle, // encSkShare (externalEuint128)
         payloadBytes1, // public payload
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -171,7 +170,7 @@ describe("Farewell", function () {
     }
   });
 
-    it("anyone should be able to claim a message of a dead user but only after the exclusivity period", async function () {
+  it("anyone should be able to claim a message of a dead user but only after the exclusivity period", async function () {
     // Register
     const checkInPeriod = 86400; // 1 day in seconds
     const gracePeriod = 86400; // 1 day in seconds
@@ -325,7 +324,7 @@ describe("Farewell", function () {
       const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
         "Charlie",
         86400n, // 1 day check-in
-        86400n   // 1 day grace (minimum)
+        86400n, // 1 day grace (minimum)
       );
       await tx.wait();
 
@@ -334,9 +333,7 @@ describe("Farewell", function () {
     });
 
     it("should revert if user is not registered", async function () {
-      await expect(
-        FarewellContract.connect(signers.owner).setName("Test")
-      ).to.be.revertedWith("not registered");
+      await expect(FarewellContract.connect(signers.owner).setName("Test")).to.be.revertedWith("not registered");
     });
   });
 
@@ -361,7 +358,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         skShareHandle,
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -377,9 +374,9 @@ describe("Farewell", function () {
       expect(n).to.eq(1);
 
       // Trying to retrieve should fail
-      await expect(
-        FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0)
-      ).to.be.revertedWith("message was revoked");
+      await expect(FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0)).to.be.revertedWith(
+        "message was revoked",
+      );
     });
 
     it("should not allow removing an already deleted message", async function () {
@@ -402,7 +399,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         skShareHandle,
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -411,9 +408,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to revoke again
-      await expect(
-        FarewellContract.connect(signers.owner).revokeMessage(0)
-      ).to.be.revertedWith("already revoked");
+      await expect(FarewellContract.connect(signers.owner).revokeMessage(0)).to.be.revertedWith("already revoked");
     });
 
     it("should not allow removing a claimed message", async function () {
@@ -438,7 +433,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         skShareHandle,
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -454,9 +449,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to revoke the claimed message (should fail - user is deceased)
-      await expect(
-        FarewellContract.connect(signers.owner).revokeMessage(0)
-      ).to.be.revertedWith("user is deceased");
+      await expect(FarewellContract.connect(signers.owner).revokeMessage(0)).to.be.revertedWith("user is deceased");
     });
 
     it("should not allow non-owner to remove message", async function () {
@@ -479,14 +472,12 @@ describe("Farewell", function () {
         emailBytes1.length,
         skShareHandle,
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
       // Alice tries to revoke owner's message
-      await expect(
-        FarewellContract.connect(signers.alice).revokeMessage(0)
-      ).to.be.revertedWith("not registered");
+      await expect(FarewellContract.connect(signers.alice).revokeMessage(0)).to.be.revertedWith("not registered");
     });
 
     it("should preserve message indices after deletion", async function () {
@@ -506,7 +497,7 @@ describe("Farewell", function () {
           emailBytes1.length,
           encrypted.handles[nLimbs],
           payloadBytes1,
-          encrypted.inputProof
+          encrypted.inputProof,
         );
         await tx.wait();
       }
@@ -523,7 +514,7 @@ describe("Farewell", function () {
           emailBytes2.length,
           encrypted.handles[nLimbs],
           payloadBytes2,
-          encrypted.inputProof
+          encrypted.inputProof,
         );
         await tx.wait();
       }
@@ -540,7 +531,7 @@ describe("Farewell", function () {
           emailBytes1.length,
           encrypted.handles[nLimbs],
           payloadBytes1,
-          encrypted.inputProof
+          encrypted.inputProof,
         );
         await tx.wait();
       }
@@ -561,9 +552,9 @@ describe("Farewell", function () {
       expect(ethers.toUtf8String(msg0.payload)).to.equal(payload1);
 
       // Message 1 should be revoked
-      await expect(
-        FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 1)
-      ).to.be.revertedWith("message was revoked");
+      await expect(FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 1)).to.be.revertedWith(
+        "message was revoked",
+      );
 
       // Message 2 should still be accessible
       const msg2 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 2);
@@ -575,22 +566,22 @@ describe("Farewell", function () {
     it("should reject registration with checkInPeriod < 1 day", async function () {
       const shortPeriod = 12 * 60 * 60; // 12 hours
       await expect(
-        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](shortPeriod, 7 * 24 * 60 * 60)
+        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](shortPeriod, 7 * 24 * 60 * 60),
       ).to.be.revertedWith("checkInPeriod too short");
     });
 
     it("should reject registration with gracePeriod < 1 day", async function () {
       const shortGrace = 12 * 60 * 60; // 12 hours
       await expect(
-        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](30 * 24 * 60 * 60, shortGrace)
+        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](30 * 24 * 60 * 60, shortGrace),
       ).to.be.revertedWith("gracePeriod too short");
     });
 
     it("should reject name longer than 100 characters", async function () {
       const longName = "a".repeat(101);
-      await expect(
-        FarewellContract.connect(signers.owner)["register(string)"](longName)
-      ).to.be.revertedWith("name too long");
+      await expect(FarewellContract.connect(signers.owner)["register(string)"](longName)).to.be.revertedWith(
+        "name too long",
+      );
     });
 
     it("should reject claim with invalid index (out of bounds)", async function () {
@@ -615,7 +606,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         skShareHandle,
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -627,9 +618,9 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to claim with invalid index
-      await expect(
-        FarewellContract.connect(signers.alice).claim(signers.owner.address, 999)
-      ).to.be.revertedWith("invalid index");
+      await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 999)).to.be.revertedWith(
+        "invalid index",
+      );
     });
 
     it("should enforce email padding to 224 bytes (7 limbs)", async function () {
@@ -654,7 +645,7 @@ describe("Farewell", function () {
         emailBytes1.length, // original length
         skShareHandle,
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -666,8 +657,8 @@ describe("Farewell", function () {
           emailBytes1.length,
           skShareHandle,
           payloadBytes1,
-          encrypted.inputProof
-        )
+          encrypted.inputProof,
+        ),
       ).to.be.revertedWith("limbs must match padded length");
     });
 
@@ -692,8 +683,8 @@ describe("Farewell", function () {
           225,
           skShareHandle,
           payloadBytes1,
-          encrypted.inputProof
-        )
+          encrypted.inputProof,
+        ),
       ).to.be.revertedWith("email too long");
     });
   });
@@ -734,9 +725,9 @@ describe("Farewell", function () {
 
       // 21st member should be rejected
       const extraWallet = ethers.Wallet.createRandom();
-      await expect(
-        FarewellContract.connect(signers.owner).addCouncilMember(extraWallet.address)
-      ).to.be.revertedWith("council full");
+      await expect(FarewellContract.connect(signers.owner).addCouncilMember(extraWallet.address)).to.be.revertedWith(
+        "council full",
+      );
     });
 
     it("should allow removing council member", async function () {
@@ -838,7 +829,7 @@ describe("Farewell", function () {
 
       // Try to vote before grace period (should fail)
       await expect(
-        FarewellContract.connect(signers.alice).voteOnStatus(signers.owner.address, true)
+        FarewellContract.connect(signers.alice).voteOnStatus(signers.owner.address, true),
       ).to.be.revertedWith("not in grace period");
     });
 
@@ -873,9 +864,9 @@ describe("Farewell", function () {
       await ethers.provider.send("evm_increaseTime", [gracePeriod + 1]);
       await ethers.provider.send("evm_mine", []);
 
-      await expect(
-        FarewellContract.connect(signers.alice).markDeceased(signers.owner.address)
-      ).to.be.revertedWith("user voted alive by council");
+      await expect(FarewellContract.connect(signers.alice).markDeceased(signers.owner.address)).to.be.revertedWith(
+        "user voted alive by council",
+      );
     });
 
     it("should mark user as deceased with majority dead vote", async function () {
@@ -935,7 +926,7 @@ describe("Farewell", function () {
 
       // Third member tries to vote (should fail - already decided)
       await expect(
-        FarewellContract.connect(allSigners[3]).voteOnStatus(signers.owner.address, false)
+        FarewellContract.connect(allSigners[3]).voteOnStatus(signers.owner.address, false),
       ).to.be.revertedWith("status already finalized");
     });
 
@@ -957,7 +948,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -971,9 +962,9 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to claim revoked message (should fail)
-      await expect(
-        FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)
-      ).to.be.revertedWith("message was revoked");
+      await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)).to.be.revertedWith(
+        "message was revoked",
+      );
     });
   });
 
@@ -994,7 +985,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -1012,7 +1003,7 @@ describe("Farewell", function () {
         encrypted2.handles[nLimbs],
         newPayload,
         encrypted2.inputProof,
-        "Updated message"
+        "Updated message",
       );
       await tx.wait();
 
@@ -1040,7 +1031,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -1064,8 +1055,8 @@ describe("Farewell", function () {
           encrypted2.handles[nLimbs],
           payloadBytes2,
           encrypted2.inputProof,
-          ""
-        )
+          "",
+        ),
       ).to.be.revertedWith("user is deceased");
     });
 
@@ -1087,7 +1078,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -1112,8 +1103,8 @@ describe("Farewell", function () {
           encrypted2.handles[nLimbs],
           payloadBytes2,
           encrypted2.inputProof,
-          ""
-        )
+          "",
+        ),
       ).to.be.revertedWith("user is deceased");
     });
   });
@@ -1152,7 +1143,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -1201,7 +1192,7 @@ describe("Farewell", function () {
         "",
         [recipientEmailHash],
         payloadContentHash,
-        { value: rewardAmount }
+        { value: rewardAmount },
       );
       await tx.wait();
 
@@ -1216,13 +1207,14 @@ describe("Farewell", function () {
       // Prove delivery with matching public signals
       const zkProof = {
         pA: [0n, 0n] as [bigint, bigint],
-        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pB: [
+          [0n, 0n],
+          [0n, 0n],
+        ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
         publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
       };
-      tx = await FarewellContract.connect(signers.alice).proveDelivery(
-        signers.owner.address, 0, 0, zkProof
-      );
+      tx = await FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof);
       await tx.wait();
 
       // Claim reward (2-arg version)
@@ -1271,7 +1263,7 @@ describe("Farewell", function () {
         "",
         [recipientEmailHash],
         payloadContentHash,
-        { value: ethers.parseEther("0.1") }
+        { value: ethers.parseEther("0.1") },
       );
       await tx.wait();
 
@@ -1285,13 +1277,14 @@ describe("Farewell", function () {
       // Prove delivery
       const zkProof = {
         pA: [0n, 0n] as [bigint, bigint],
-        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pB: [
+          [0n, 0n],
+          [0n, 0n],
+        ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
         publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
       };
-      tx = await FarewellContract.connect(signers.alice).proveDelivery(
-        signers.owner.address, 0, 0, zkProof
-      );
+      tx = await FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof);
       await tx.wait();
 
       // Claim reward first time
@@ -1300,7 +1293,7 @@ describe("Farewell", function () {
 
       // Try to claim again (should fail - reward already zeroed out)
       await expect(
-        FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0)
+        FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0),
       ).to.be.revertedWith("no reward");
     });
   });
@@ -1311,7 +1304,11 @@ describe("Farewell", function () {
       const gracePeriod = 86400; // 1 day
 
       // Register
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Test User", checkInPeriod, gracePeriod);
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Test User",
+        checkInPeriod,
+        gracePeriod,
+      );
       await tx.wait();
 
       // Deploy mock verifier and configure
@@ -1344,7 +1341,7 @@ describe("Farewell", function () {
         "Test message",
         [recipientEmailHash],
         payloadContentHash,
-        { value: rewardAmount }
+        { value: rewardAmount },
       );
       await tx.wait();
 
@@ -1361,13 +1358,14 @@ describe("Farewell", function () {
       // Prove delivery
       const zkProof = {
         pA: [0n, 0n] as [bigint, bigint],
-        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pB: [
+          [0n, 0n],
+          [0n, 0n],
+        ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
         publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
       };
-      tx = await FarewellContract.connect(signers.alice).proveDelivery(
-        signers.owner.address, 0, 0, zkProof
-      );
+      tx = await FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof);
       await tx.wait();
 
       // Claim reward
@@ -1437,7 +1435,7 @@ describe("Farewell", function () {
         encrypted.handles[nLimbs],
         payloadBytes1,
         encrypted.inputProof,
-        "Original message"
+        "Original message",
       );
       await tx.wait();
 
@@ -1455,7 +1453,7 @@ describe("Farewell", function () {
         encrypted2.handles[nLimbs],
         newPayload,
         encrypted2.inputProof,
-        "Edited message"
+        "Edited message",
       );
       await tx.wait();
 
@@ -1475,9 +1473,9 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Cannot claim revoked message
-      await expect(
-        FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)
-      ).to.be.revertedWith("message was revoked");
+      await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)).to.be.revertedWith(
+        "message was revoked",
+      );
     });
   });
 
@@ -1511,7 +1509,7 @@ describe("Farewell", function () {
         "",
         [recipientEmailHash],
         payloadContentHash,
-        { value: ethers.parseEther("0.1") }
+        { value: ethers.parseEther("0.1") },
       );
       await tx.wait();
 
@@ -1526,12 +1524,15 @@ describe("Farewell", function () {
       // Try to prove delivery without verifier set - should revert
       const zkProof = {
         pA: [0n, 0n] as [bigint, bigint],
-        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pB: [
+          [0n, 0n],
+          [0n, 0n],
+        ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
         publicSignals: [BigInt(recipientEmailHash), 12345n, BigInt(payloadContentHash)],
       };
       await expect(
-        FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof)
+        FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof),
       ).to.be.revertedWith("verifier not configured");
     });
 
@@ -1553,7 +1554,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -1572,9 +1573,9 @@ describe("Farewell", function () {
       await ethers.provider.send("evm_mine", []);
 
       // Bob tries to claim the same message (should fail)
-      await expect(
-        FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)
-      ).to.be.revertedWith("already claimed");
+      await expect(FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)).to.be.revertedWith(
+        "already claimed",
+      );
     });
 
     it("H-2: should allow finalAlive user to re-enter liveness cycle via ping", async function () {
@@ -1626,7 +1627,11 @@ describe("Farewell", function () {
     it("H-4: should prevent re-registration during grace period", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Original", checkInPeriod, gracePeriod);
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Original",
+        checkInPeriod,
+        gracePeriod,
+      );
       await tx.wait();
 
       // Advance past check-in period into grace
@@ -1635,21 +1640,33 @@ describe("Farewell", function () {
 
       // Try to re-register (should fail - check-in period expired)
       await expect(
-        FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Updated", checkInPeriod, gracePeriod)
+        FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+          "Updated",
+          checkInPeriod,
+          gracePeriod,
+        ),
       ).to.be.revertedWith("check-in period expired");
     });
 
     it("H-4: should update name on re-registration", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Original", checkInPeriod, gracePeriod);
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Original",
+        checkInPeriod,
+        gracePeriod,
+      );
       await tx.wait();
 
       let name = await FarewellContract.getUserName(signers.owner.address);
       expect(name).to.eq("Original");
 
       // Re-register within check-in period (should update name)
-      tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"]("Updated", checkInPeriod, gracePeriod);
+      tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Updated",
+        checkInPeriod,
+        gracePeriod,
+      );
       await tx.wait();
 
       name = await FarewellContract.getUserName(signers.owner.address);
@@ -1672,7 +1689,7 @@ describe("Farewell", function () {
         emailBytes1.length,
         encrypted.handles[nLimbs],
         payloadBytes1,
-        encrypted.inputProof
+        encrypted.inputProof,
       );
       await tx.wait();
 
@@ -1694,7 +1711,7 @@ describe("Farewell", function () {
         encrypted2.handles[nLimbs],
         toBytes("new payload"),
         encrypted2.inputProof,
-        "new public msg"
+        "new public msg",
       );
       await tx.wait();
 
@@ -1724,7 +1741,7 @@ describe("Farewell", function () {
         encrypted.handles[nLimbs],
         payloadBytes1,
         encrypted.inputProof,
-        "Hello world"
+        "Hello world",
       );
       await tx.wait();
 
@@ -1744,7 +1761,7 @@ describe("Farewell", function () {
         encrypted2.handles[nLimbs],
         payloadBytes1,
         encrypted2.inputProof,
-        ""
+        "",
       );
       await tx.wait();
 
@@ -1810,7 +1827,7 @@ describe("Farewell", function () {
         "",
         [recipientEmailHash],
         payloadContentHash,
-        { value: rewardAmount }
+        { value: rewardAmount },
       );
       await tx.wait();
 
@@ -1856,8 +1873,8 @@ describe("Farewell", function () {
           "",
           [recipientEmailHash],
           payloadContentHash,
-          { value: 0 }
-        )
+          { value: 0 },
+        ),
       ).to.be.revertedWith("must include reward");
     });
   });

@@ -39,14 +39,7 @@ export class SepoliaConfigUpgradeable__factory {
   static createInterface(): SepoliaConfigUpgradeableInterface {
     return new Interface(_abi) as SepoliaConfigUpgradeableInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): SepoliaConfigUpgradeable {
-    return new Contract(
-      address,
-      _abi,
-      runner
-    ) as unknown as SepoliaConfigUpgradeable;
+  static connect(address: string, runner?: ContractRunner | null): SepoliaConfigUpgradeable {
+    return new Contract(address, _abi, runner) as unknown as SepoliaConfigUpgradeable;
   }
 }

@@ -2,7 +2,8 @@
 
 ## Project Overview
 
-Farewell Core contains the smart contracts for the Farewell protocol - a decentralized application for posthumous encrypted messages using Fully Homomorphic Encryption (FHE) on Ethereum.
+Farewell Core contains the smart contracts for the Farewell protocol - a decentralized application for posthumous
+encrypted messages using Fully Homomorphic Encryption (FHE) on Ethereum.
 
 **Status**: Beta on Sepolia testnet.
 
@@ -89,16 +90,17 @@ uint256 constant REWARD_PER_KB = 0.005 ether;
 
 ```solidity
 enum UserStatus {
-    Alive,       // Within check-in period
-    Grace,       // Missed check-in, within grace period
-    Deceased,    // Finalized deceased or timeout
-    FinalAlive   // Council voted alive - cannot be marked deceased
+  Alive, // Within check-in period
+  Grace, // Missed check-in, within grace period
+  Deceased, // Finalized deceased or timeout
+  FinalAlive // Council voted alive - cannot be marked deceased
 }
 ```
 
 ## Contract Functions
 
 ### User Lifecycle
+
 - `register(name, checkInPeriod, gracePeriod)` - Register with custom periods
 - `register(name)` - Register with defaults
 - `ping()` - Reset check-in timer
@@ -106,6 +108,7 @@ enum UserStatus {
 - `getUserState(user)` - Get current status and grace time remaining
 
 ### Messages
+
 - `addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage)` - Add encrypted message
 - `addMessageWithReward(...)` - Add message with ETH reward for delivery verification
 - `editMessage(index, ...)` - Edit existing message (owner only, not claimed)
@@ -113,21 +116,25 @@ enum UserStatus {
 - `messageCount(user)` - Get number of messages for user
 
 ### Claiming & Delivery
+
 - `claim(user, index)` - Claim a message (grants FHE decryption access)
 - `retrieve(owner, index)` - Retrieve encrypted message data
 
 ### ZK-Email Verification
+
 - `proveDelivery(user, messageIndex, recipientIndex, proof)` - Submit delivery proof
 - `claimReward(user, messageIndex)` - Claim reward after all proofs
 - `getMessageRewardInfo(user, index)` - Get reward and proof status
 
 ### Council
+
 - `addCouncilMember(member)` - Add trusted council member
 - `removeCouncilMember(member)` - Remove council member
 - `voteOnStatus(user, voteAlive)` - Vote during grace period
 - `getCouncilMembers(user)` - Get council member list
 
 ### Admin (Owner Only)
+
 - `setZkEmailVerifier(address)` - Set Groth16 verifier contract
 - `setTrustedDkimKey(domain, pubkeyHash, trusted)` - Manage trusted DKIM keys
 
@@ -165,6 +172,7 @@ The contract uses Zama's FHEVM for encrypted data:
 ## Security Considerations
 
 ### Known Limitations
+
 1. **No Recovery**: Users marked deceased cannot be recovered (except via council vote before finalization)
 2. **FHE Permissions**: Once `FHE.allow()` is called, it cannot be revoked
 3. **Timestamp Manipulation**: Block timestamps can be manipulated ~15 seconds
@@ -173,12 +181,14 @@ The contract uses Zama's FHEVM for encrypted data:
 ## Development Guidelines
 
 ### Code Style
+
 - Use OpenZeppelin patterns for upgradeability
 - Prefer `unchecked` blocks for gas optimization where safe
 - Use `storage` pointers to avoid unnecessary copies
 - Follow Solidity naming conventions
 
 ### Testing
+
 ```bash
 npx hardhat test                    # Run all tests
 npx hardhat test --grep "register"  # Run specific tests
@@ -186,6 +196,7 @@ npx hardhat coverage                # Generate coverage report
 ```
 
 ### Deployment
+
 ```bash
 npx hardhat deploy --network sepolia
 npx hardhat verify --network sepolia <address>
@@ -195,18 +206,22 @@ npx hardhat verify --network sepolia <address>
 
 **IMPORTANT**: Changes to the contract interface affect both the Farewell UI and farewell-claimer:
 
-1. **Farewell UI** ([farewell.world](https://farewell.world)) — generates ABIs from this contract via `genabi`. If you change function signatures, events, or structs, the UI's ABI must be regenerated.
-2. **farewell-claimer** ([repo](https://github.com/farewell-world/farewell-claimer)) — parses claim package JSON files that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the claimer's `_load_claim_package()` accordingly.
-3. The claim package JSON format uses fields: `recipients`, `skShare`, `encryptedPayload`, `contentHash` — these map to contract data returned by `retrieve()`.
+1. **Farewell UI** ([farewell.world](https://farewell.world)) — generates ABIs from this contract via `genabi`. If you
+   change function signatures, events, or structs, the UI's ABI must be regenerated.
+2. **farewell-claimer** ([repo](https://github.com/farewell-world/farewell-claimer)) — parses claim package JSON files
+   that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the
+   claimer's `_load_claim_package()` accordingly.
+3. The claim package JSON format uses fields: `recipients`, `skShare`, `encryptedPayload`, `contentHash` — these map to
+   contract data returned by `retrieve()`.
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/protocol.md](docs/protocol.md) | Full protocol specification — lifecycle, encryption, key sharing, FHE, council, rewards |
-| [docs/contract-api.md](docs/contract-api.md) | Complete API reference — every function, event, struct, constant, and error |
-| [docs/building-a-client.md](docs/building-a-client.md) | Guide with TypeScript examples for building alternative clients |
-| [docs/proof-structure.md](docs/proof-structure.md) | Delivery proof architecture — zk-email format, Groth16 verification, data structures |
+| Document                                               | Description                                                                             |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| [docs/protocol.md](docs/protocol.md)                   | Full protocol specification — lifecycle, encryption, key sharing, FHE, council, rewards |
+| [docs/contract-api.md](docs/contract-api.md)           | Complete API reference — every function, event, struct, constant, and error             |
+| [docs/building-a-client.md](docs/building-a-client.md) | Guide with TypeScript examples for building alternative clients                         |
+| [docs/proof-structure.md](docs/proof-structure.md)     | Delivery proof architecture — zk-email format, Groth16 verification, data structures    |
 
 ## Related Projects
 

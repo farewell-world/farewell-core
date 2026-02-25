@@ -35,77 +35,33 @@ export interface ClearFarewellInterface extends Interface {
       | "ping"
       | "register"
       | "registerDefault"
-      | "users"
+      | "users",
   ): FunctionFragment;
 
   getEvent(
-    nameOrSignatureOrTopic:
-      | "Deceased"
-      | "MessageAdded"
-      | "MessageClaimed"
-      | "Ping"
-      | "UserRegistered"
+    nameOrSignatureOrTopic: "Deceased" | "MessageAdded" | "MessageClaimed" | "Ping" | "UserRegistered",
   ): EventFragment;
 
-  encodeFunctionData(
-    functionFragment: "addMessage",
-    values: [string, BytesLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "claim",
-    values: [AddressLike, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getMessageMeta",
-    values: [AddressLike, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getMyAddress",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "markDeceased",
-    values: [AddressLike]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "messageCount",
-    values: [AddressLike]
-  ): string;
+  encodeFunctionData(functionFragment: "addMessage", values: [string, BytesLike]): string;
+  encodeFunctionData(functionFragment: "claim", values: [AddressLike, BigNumberish]): string;
+  encodeFunctionData(functionFragment: "getMessageMeta", values: [AddressLike, BigNumberish]): string;
+  encodeFunctionData(functionFragment: "getMyAddress", values?: undefined): string;
+  encodeFunctionData(functionFragment: "markDeceased", values: [AddressLike]): string;
+  encodeFunctionData(functionFragment: "messageCount", values: [AddressLike]): string;
   encodeFunctionData(functionFragment: "ping", values?: undefined): string;
-  encodeFunctionData(
-    functionFragment: "register",
-    values: [BigNumberish, BigNumberish]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "registerDefault",
-    values?: undefined
-  ): string;
+  encodeFunctionData(functionFragment: "register", values: [BigNumberish, BigNumberish]): string;
+  encodeFunctionData(functionFragment: "registerDefault", values?: undefined): string;
   encodeFunctionData(functionFragment: "users", values: [AddressLike]): string;
 
   decodeFunctionResult(functionFragment: "addMessage", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "claim", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "getMessageMeta",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getMyAddress",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "markDeceased",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "messageCount",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "getMessageMeta", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getMyAddress", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "markDeceased", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "messageCount", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ping", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "register", data: BytesLike): Result;
-  decodeFunctionResult(
-    functionFragment: "registerDefault",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "registerDefault", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "users", data: BytesLike): Result;
 }
 
@@ -127,14 +83,9 @@ export namespace MessageAddedEvent {
     user: AddressLike,
     index: BigNumberish,
     recipientEmailHash: BytesLike,
-    recipientEmail: string
+    recipientEmail: string,
   ];
-  export type OutputTuple = [
-    user: string,
-    index: bigint,
-    recipientEmailHash: string,
-    recipientEmail: string
-  ];
+  export type OutputTuple = [user: string, index: bigint, recipientEmailHash: string, recipientEmail: string];
   export interface OutputObject {
     user: string;
     index: bigint;
@@ -153,14 +104,14 @@ export namespace MessageClaimedEvent {
     index: BigNumberish,
     recipientEmailHash: BytesLike,
     recipientEmail: string,
-    data: BytesLike
+    data: BytesLike,
   ];
   export type OutputTuple = [
     user: string,
     index: bigint,
     recipientEmailHash: string,
     recipientEmail: string,
-    data: string
+    data: string,
   ];
   export interface OutputObject {
     user: string;
@@ -189,16 +140,8 @@ export namespace PingEvent {
 }
 
 export namespace UserRegisteredEvent {
-  export type InputTuple = [
-    user: AddressLike,
-    checkInPeriod: BigNumberish,
-    gracePeriod: BigNumberish
-  ];
-  export type OutputTuple = [
-    user: string,
-    checkInPeriod: bigint,
-    gracePeriod: bigint
-  ];
+  export type InputTuple = [user: AddressLike, checkInPeriod: BigNumberish, gracePeriod: BigNumberish];
+  export type OutputTuple = [user: string, checkInPeriod: bigint, gracePeriod: bigint];
   export interface OutputObject {
     user: string;
     checkInPeriod: bigint;
@@ -219,51 +162,33 @@ export interface ClearFarewell extends BaseContract {
   queryFilter<TCEvent extends TypedContractEvent>(
     event: TCEvent,
     fromBlockOrBlockhash?: string | number | undefined,
-    toBlock?: string | number | undefined
+    toBlock?: string | number | undefined,
   ): Promise<Array<TypedEventLog<TCEvent>>>;
   queryFilter<TCEvent extends TypedContractEvent>(
     filter: TypedDeferredTopicFilter<TCEvent>,
     fromBlockOrBlockhash?: string | number | undefined,
-    toBlock?: string | number | undefined
+    toBlock?: string | number | undefined,
   ): Promise<Array<TypedEventLog<TCEvent>>>;
 
-  on<TCEvent extends TypedContractEvent>(
-    event: TCEvent,
-    listener: TypedListener<TCEvent>
-  ): Promise<this>;
+  on<TCEvent extends TypedContractEvent>(event: TCEvent, listener: TypedListener<TCEvent>): Promise<this>;
   on<TCEvent extends TypedContractEvent>(
     filter: TypedDeferredTopicFilter<TCEvent>,
-    listener: TypedListener<TCEvent>
+    listener: TypedListener<TCEvent>,
   ): Promise<this>;
 
-  once<TCEvent extends TypedContractEvent>(
-    event: TCEvent,
-    listener: TypedListener<TCEvent>
-  ): Promise<this>;
+  once<TCEvent extends TypedContractEvent>(event: TCEvent, listener: TypedListener<TCEvent>): Promise<this>;
   once<TCEvent extends TypedContractEvent>(
     filter: TypedDeferredTopicFilter<TCEvent>,
-    listener: TypedListener<TCEvent>
+    listener: TypedListener<TCEvent>,
   ): Promise<this>;
 
-  listeners<TCEvent extends TypedContractEvent>(
-    event: TCEvent
-  ): Promise<Array<TypedListener<TCEvent>>>;
+  listeners<TCEvent extends TypedContractEvent>(event: TCEvent): Promise<Array<TypedListener<TCEvent>>>;
   listeners(eventName?: string): Promise<Array<Listener>>;
-  removeAllListeners<TCEvent extends TypedContractEvent>(
-    event?: TCEvent
-  ): Promise<this>;
+  removeAllListeners<TCEvent extends TypedContractEvent>(event?: TCEvent): Promise<this>;
 
-  addMessage: TypedContractMethod<
-    [recipientEmail: string, data: BytesLike],
-    [bigint],
-    "nonpayable"
-  >;
+  addMessage: TypedContractMethod<[recipientEmail: string, data: BytesLike], [bigint], "nonpayable">;
 
-  claim: TypedContractMethod<
-    [user: AddressLike, index: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
+  claim: TypedContractMethod<[user: AddressLike, index: BigNumberish], [void], "nonpayable">;
 
   getMessageMeta: TypedContractMethod<
     [user: AddressLike, index: BigNumberish],
@@ -272,7 +197,7 @@ export interface ClearFarewell extends BaseContract {
         recipientEmail: string;
         recipientEmailHash: string;
         delivered: boolean;
-      }
+      },
     ],
     "view"
   >;
@@ -285,11 +210,7 @@ export interface ClearFarewell extends BaseContract {
 
   ping: TypedContractMethod<[], [void], "nonpayable">;
 
-  register: TypedContractMethod<
-    [checkInPeriod: BigNumberish, gracePeriod: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
+  register: TypedContractMethod<[checkInPeriod: BigNumberish, gracePeriod: BigNumberish], [void], "nonpayable">;
 
   registerDefault: TypedContractMethod<[], [void], "nonpayable">;
 
@@ -301,67 +222,39 @@ export interface ClearFarewell extends BaseContract {
         gracePeriod: bigint;
         lastCheckIn: bigint;
         deceased: boolean;
-      }
+      },
     ],
     "view"
   >;
 
-  getFunction<T extends ContractMethod = ContractMethod>(
-    key: string | FunctionFragment
-  ): T;
+  getFunction<T extends ContractMethod = ContractMethod>(key: string | FunctionFragment): T;
 
   getFunction(
-    nameOrSignature: "addMessage"
-  ): TypedContractMethod<
-    [recipientEmail: string, data: BytesLike],
-    [bigint],
-    "nonpayable"
-  >;
+    nameOrSignature: "addMessage",
+  ): TypedContractMethod<[recipientEmail: string, data: BytesLike], [bigint], "nonpayable">;
   getFunction(
-    nameOrSignature: "claim"
-  ): TypedContractMethod<
-    [user: AddressLike, index: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "getMessageMeta"
-  ): TypedContractMethod<
+    nameOrSignature: "claim",
+  ): TypedContractMethod<[user: AddressLike, index: BigNumberish], [void], "nonpayable">;
+  getFunction(nameOrSignature: "getMessageMeta"): TypedContractMethod<
     [user: AddressLike, index: BigNumberish],
     [
       [string, string, boolean] & {
         recipientEmail: string;
         recipientEmailHash: string;
         delivered: boolean;
-      }
+      },
     ],
     "view"
   >;
+  getFunction(nameOrSignature: "getMyAddress"): TypedContractMethod<[], [string], "view">;
+  getFunction(nameOrSignature: "markDeceased"): TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
+  getFunction(nameOrSignature: "messageCount"): TypedContractMethod<[user: AddressLike], [bigint], "view">;
+  getFunction(nameOrSignature: "ping"): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "getMyAddress"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "markDeceased"
-  ): TypedContractMethod<[user: AddressLike], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "messageCount"
-  ): TypedContractMethod<[user: AddressLike], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "ping"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "register"
-  ): TypedContractMethod<
-    [checkInPeriod: BigNumberish, gracePeriod: BigNumberish],
-    [void],
-    "nonpayable"
-  >;
-  getFunction(
-    nameOrSignature: "registerDefault"
-  ): TypedContractMethod<[], [void], "nonpayable">;
-  getFunction(
-    nameOrSignature: "users"
-  ): TypedContractMethod<
+    nameOrSignature: "register",
+  ): TypedContractMethod<[checkInPeriod: BigNumberish, gracePeriod: BigNumberish], [void], "nonpayable">;
+  getFunction(nameOrSignature: "registerDefault"): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(nameOrSignature: "users"): TypedContractMethod<
     [arg0: AddressLike],
     [
       [bigint, bigint, bigint, boolean] & {
@@ -369,41 +262,27 @@ export interface ClearFarewell extends BaseContract {
         gracePeriod: bigint;
         lastCheckIn: bigint;
         deceased: boolean;
-      }
+      },
     ],
     "view"
   >;
 
   getEvent(
-    key: "Deceased"
-  ): TypedContractEvent<
-    DeceasedEvent.InputTuple,
-    DeceasedEvent.OutputTuple,
-    DeceasedEvent.OutputObject
-  >;
+    key: "Deceased",
+  ): TypedContractEvent<DeceasedEvent.InputTuple, DeceasedEvent.OutputTuple, DeceasedEvent.OutputObject>;
   getEvent(
-    key: "MessageAdded"
-  ): TypedContractEvent<
-    MessageAddedEvent.InputTuple,
-    MessageAddedEvent.OutputTuple,
-    MessageAddedEvent.OutputObject
-  >;
+    key: "MessageAdded",
+  ): TypedContractEvent<MessageAddedEvent.InputTuple, MessageAddedEvent.OutputTuple, MessageAddedEvent.OutputObject>;
   getEvent(
-    key: "MessageClaimed"
+    key: "MessageClaimed",
   ): TypedContractEvent<
     MessageClaimedEvent.InputTuple,
     MessageClaimedEvent.OutputTuple,
     MessageClaimedEvent.OutputObject
   >;
+  getEvent(key: "Ping"): TypedContractEvent<PingEvent.InputTuple, PingEvent.OutputTuple, PingEvent.OutputObject>;
   getEvent(
-    key: "Ping"
-  ): TypedContractEvent<
-    PingEvent.InputTuple,
-    PingEvent.OutputTuple,
-    PingEvent.OutputObject
-  >;
-  getEvent(
-    key: "UserRegistered"
+    key: "UserRegistered",
   ): TypedContractEvent<
     UserRegisteredEvent.InputTuple,
     UserRegisteredEvent.OutputTuple,
@@ -416,11 +295,7 @@ export interface ClearFarewell extends BaseContract {
       DeceasedEvent.OutputTuple,
       DeceasedEvent.OutputObject
     >;
-    Deceased: TypedContractEvent<
-      DeceasedEvent.InputTuple,
-      DeceasedEvent.OutputTuple,
-      DeceasedEvent.OutputObject
-    >;
+    Deceased: TypedContractEvent<DeceasedEvent.InputTuple, DeceasedEvent.OutputTuple, DeceasedEvent.OutputObject>;
 
     "MessageAdded(address,uint256,bytes32,string)": TypedContractEvent<
       MessageAddedEvent.InputTuple,
@@ -444,16 +319,8 @@ export interface ClearFarewell extends BaseContract {
       MessageClaimedEvent.OutputObject
     >;
 
-    "Ping(address,uint64)": TypedContractEvent<
-      PingEvent.InputTuple,
-      PingEvent.OutputTuple,
-      PingEvent.OutputObject
-    >;
-    Ping: TypedContractEvent<
-      PingEvent.InputTuple,
-      PingEvent.OutputTuple,
-      PingEvent.OutputObject
-    >;
+    "Ping(address,uint64)": TypedContractEvent<PingEvent.InputTuple, PingEvent.OutputTuple, PingEvent.OutputObject>;
+    Ping: TypedContractEvent<PingEvent.InputTuple, PingEvent.OutputTuple, PingEvent.OutputObject>;
 
     "UserRegistered(address,uint64,uint64)": TypedContractEvent<
       UserRegisteredEvent.InputTuple,

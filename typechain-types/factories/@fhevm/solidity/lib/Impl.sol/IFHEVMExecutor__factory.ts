@@ -788,10 +788,7 @@ export class IFHEVMExecutor__factory {
   static createInterface(): IFHEVMExecutorInterface {
     return new Interface(_abi) as IFHEVMExecutorInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): IFHEVMExecutor {
+  static connect(address: string, runner?: ContractRunner | null): IFHEVMExecutor {
     return new Contract(address, _abi, runner) as unknown as IFHEVMExecutor;
   }
 }

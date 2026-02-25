@@ -113,10 +113,7 @@ export class OwnableUpgradeable__factory {
   static createInterface(): OwnableUpgradeableInterface {
     return new Interface(_abi) as OwnableUpgradeableInterface;
   }
-  static connect(
-    address: string,
-    runner?: ContractRunner | null
-  ): OwnableUpgradeable {
+  static connect(address: string, runner?: ContractRunner | null): OwnableUpgradeable {
     return new Contract(address, _abi, runner) as unknown as OwnableUpgradeable;
   }
 }
