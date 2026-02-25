@@ -2,7 +2,6 @@ import { FhevmType } from "@fhevm/hardhat-plugin";
 import { Farewell, Farewell__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
-import { toUtf8Bytes } from "ethers";
 import { ethers, fhevm } from "hardhat";
 import { upgrades } from "hardhat";
 
@@ -235,8 +234,9 @@ describe("Farewell", function () {
     await ethers.provider.send("evm_mine", []); // mine a block to apply the time
 
     // Cannot claim before marking deceased
-    await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)).to.be.revertedWith(
-      "not deliverable",
+    await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)).to.be.revertedWithCustomError(
+      FarewellContract,
+      "NotDeliverable",
     );
 
     // Alice marks owner as deceased (Alice becomes the notifier)
@@ -245,8 +245,9 @@ describe("Farewell", function () {
 
     // Within the first 24h after notification:
     // - Non-notifier (owner) cannot claim
-    await expect(FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)).to.be.revertedWith(
-      "still exclusive for the notifier",
+    await expect(FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)).to.be.revertedWithCustomError(
+      FarewellContract,
+      "StillExclusiveForNotifier",
     );
 
     // - Notifier (alice) can claim
@@ -333,7 +334,10 @@ describe("Farewell", function () {
     });
 
     it("should revert if user is not registered", async function () {
-      await expect(FarewellContract.connect(signers.owner).setName("Test")).to.be.revertedWith("not registered");
+      await expect(FarewellContract.connect(signers.owner).setName("Test")).to.be.revertedWithCustomError(
+        FarewellContract,
+        "NotRegistered",
+      );
     });
   });
 
@@ -374,9 +378,9 @@ describe("Farewell", function () {
       expect(n).to.eq(1);
 
       // Trying to retrieve should fail
-      await expect(FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0)).to.be.revertedWith(
-        "message was revoked",
-      );
+      await expect(
+        FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0),
+      ).to.be.revertedWithCustomError(FarewellContract, "MessageWasRevoked");
     });
 
     it("should not allow removing an already deleted message", async function () {
@@ -408,7 +412,10 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to revoke again
-      await expect(FarewellContract.connect(signers.owner).revokeMessage(0)).to.be.revertedWith("already revoked");
+      await expect(FarewellContract.connect(signers.owner).revokeMessage(0)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "AlreadyRevoked",
+      );
     });
 
     it("should not allow removing a claimed message", async function () {
@@ -449,7 +456,10 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to revoke the claimed message (should fail - user is deceased)
-      await expect(FarewellContract.connect(signers.owner).revokeMessage(0)).to.be.revertedWith("user is deceased");
+      await expect(FarewellContract.connect(signers.owner).revokeMessage(0)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "UserDeceased",
+      );
     });
 
     it("should not allow non-owner to remove message", async function () {
@@ -477,7 +487,10 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Alice tries to revoke owner's message
-      await expect(FarewellContract.connect(signers.alice).revokeMessage(0)).to.be.revertedWith("not registered");
+      await expect(FarewellContract.connect(signers.alice).revokeMessage(0)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "NotRegistered",
+      );
     });
 
     it("should preserve message indices after deletion", async function () {
@@ -552,9 +565,9 @@ describe("Farewell", function () {
       expect(ethers.toUtf8String(msg0.payload)).to.equal(payload1);
 
       // Message 1 should be revoked
-      await expect(FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 1)).to.be.revertedWith(
-        "message was revoked",
-      );
+      await expect(
+        FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 1),
+      ).to.be.revertedWithCustomError(FarewellContract, "MessageWasRevoked");
 
       // Message 2 should still be accessible
       const msg2 = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 2);
@@ -567,20 +580,21 @@ describe("Farewell", function () {
       const shortPeriod = 12 * 60 * 60; // 12 hours
       await expect(
         FarewellContract.connect(signers.owner)["register(uint64,uint64)"](shortPeriod, 7 * 24 * 60 * 60),
-      ).to.be.revertedWith("checkInPeriod too short");
+      ).to.be.revertedWithCustomError(FarewellContract, "CheckInPeriodTooShort");
     });
 
     it("should reject registration with gracePeriod < 1 day", async function () {
       const shortGrace = 12 * 60 * 60; // 12 hours
       await expect(
         FarewellContract.connect(signers.owner)["register(uint64,uint64)"](30 * 24 * 60 * 60, shortGrace),
-      ).to.be.revertedWith("gracePeriod too short");
+      ).to.be.revertedWithCustomError(FarewellContract, "GracePeriodTooShort");
     });
 
     it("should reject name longer than 100 characters", async function () {
       const longName = "a".repeat(101);
-      await expect(FarewellContract.connect(signers.owner)["register(string)"](longName)).to.be.revertedWith(
-        "name too long",
+      await expect(FarewellContract.connect(signers.owner)["register(string)"](longName)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "NameTooLong",
       );
     });
 
@@ -618,9 +632,9 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to claim with invalid index
-      await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 999)).to.be.revertedWith(
-        "invalid index",
-      );
+      await expect(
+        FarewellContract.connect(signers.alice).claim(signers.owner.address, 999),
+      ).to.be.revertedWithCustomError(FarewellContract, "InvalidIndex");
     });
 
     it("should enforce email padding to 224 bytes (7 limbs)", async function () {
@@ -659,11 +673,11 @@ describe("Farewell", function () {
           payloadBytes1,
           encrypted.inputProof,
         ),
-      ).to.be.revertedWith("limbs must match padded length");
+      ).to.be.revertedWithCustomError(FarewellContract, "LimbsMismatch");
     });
 
     it("should reject email longer than 224 bytes", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      const tx = await FarewellContract.connect(signers.owner).register();
       await tx.wait();
 
       // Use valid encryption (7 limbs) but pass emailByteLen > MAX_EMAIL_BYTE_LEN
@@ -685,7 +699,7 @@ describe("Farewell", function () {
           payloadBytes1,
           encrypted.inputProof,
         ),
-      ).to.be.revertedWith("email too long");
+      ).to.be.revertedWithCustomError(FarewellContract, "EmailTooLong");
     });
   });
 
@@ -725,9 +739,9 @@ describe("Farewell", function () {
 
       // 21st member should be rejected
       const extraWallet = ethers.Wallet.createRandom();
-      await expect(FarewellContract.connect(signers.owner).addCouncilMember(extraWallet.address)).to.be.revertedWith(
-        "council full",
-      );
+      await expect(
+        FarewellContract.connect(signers.owner).addCouncilMember(extraWallet.address),
+      ).to.be.revertedWithCustomError(FarewellContract, "CouncilFull");
     });
 
     it("should allow removing council member", async function () {
@@ -770,7 +784,7 @@ describe("Farewell", function () {
     it("should return correct user state", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      const tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
       // Initially should be Alive (status 0)
@@ -830,7 +844,7 @@ describe("Farewell", function () {
       // Try to vote before grace period (should fail)
       await expect(
         FarewellContract.connect(signers.alice).voteOnStatus(signers.owner.address, true),
-      ).to.be.revertedWith("not in grace period");
+      ).to.be.revertedWithCustomError(FarewellContract, "NotInGracePeriod");
     });
 
     it("should mark user as alive with majority vote and prevent future deceased status", async function () {
@@ -864,9 +878,9 @@ describe("Farewell", function () {
       await ethers.provider.send("evm_increaseTime", [gracePeriod + 1]);
       await ethers.provider.send("evm_mine", []);
 
-      await expect(FarewellContract.connect(signers.alice).markDeceased(signers.owner.address)).to.be.revertedWith(
-        "user voted alive by council",
-      );
+      await expect(
+        FarewellContract.connect(signers.alice).markDeceased(signers.owner.address),
+      ).to.be.revertedWithCustomError(FarewellContract, "UserVotedAlive");
     });
 
     it("should mark user as deceased with majority dead vote", async function () {
@@ -927,7 +941,7 @@ describe("Farewell", function () {
       // Third member tries to vote (should fail - already decided)
       await expect(
         FarewellContract.connect(allSigners[3]).voteOnStatus(signers.owner.address, false),
-      ).to.be.revertedWith("status already finalized");
+      ).to.be.revertedWithCustomError(FarewellContract, "VoteAlreadyDecided");
     });
 
     it("should prevent claiming revoked messages", async function () {
@@ -962,9 +976,9 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to claim revoked message (should fail)
-      await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)).to.be.revertedWith(
-        "message was revoked",
-      );
+      await expect(
+        FarewellContract.connect(signers.alice).claim(signers.owner.address, 0),
+      ).to.be.revertedWithCustomError(FarewellContract, "MessageWasRevoked");
     });
   });
 
@@ -1057,7 +1071,7 @@ describe("Farewell", function () {
           encrypted2.inputProof,
           "",
         ),
-      ).to.be.revertedWith("user is deceased");
+      ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
     });
 
     it("should not allow editing claimed message", async function () {
@@ -1105,7 +1119,7 @@ describe("Farewell", function () {
           encrypted2.inputProof,
           "",
         ),
-      ).to.be.revertedWith("user is deceased");
+      ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
     });
   });
 
@@ -1294,7 +1308,7 @@ describe("Farewell", function () {
       // Try to claim again (should fail - reward already zeroed out)
       await expect(
         FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0),
-      ).to.be.revertedWith("no reward");
+      ).to.be.revertedWithCustomError(FarewellContract, "NoReward");
     });
   });
 
@@ -1458,7 +1472,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Verify edit
-      let msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
+      const msg = await FarewellContract.connect(signers.owner).retrieve(signers.owner.address, 0);
       expect(ethers.toUtf8String(msg.payload)).to.equal("edited payload");
       expect(msg.publicMessage).to.equal("Edited message");
 
@@ -1473,9 +1487,9 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Cannot claim revoked message
-      await expect(FarewellContract.connect(signers.alice).claim(signers.owner.address, 0)).to.be.revertedWith(
-        "message was revoked",
-      );
+      await expect(
+        FarewellContract.connect(signers.alice).claim(signers.owner.address, 0),
+      ).to.be.revertedWithCustomError(FarewellContract, "MessageWasRevoked");
     });
   });
 
@@ -1533,7 +1547,7 @@ describe("Farewell", function () {
       };
       await expect(
         FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof),
-      ).to.be.revertedWith("verifier not configured");
+      ).to.be.revertedWithCustomError(FarewellContract, "VerifierNotConfigured");
     });
 
     it("H-1: should prevent re-claiming an already claimed message", async function () {
@@ -1573,8 +1587,9 @@ describe("Farewell", function () {
       await ethers.provider.send("evm_mine", []);
 
       // Bob tries to claim the same message (should fail)
-      await expect(FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)).to.be.revertedWith(
-        "already claimed",
+      await expect(FarewellContract.connect(signers.bob).claim(signers.owner.address, 0)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "AlreadyClaimed",
       );
     });
 
@@ -1627,7 +1642,7 @@ describe("Farewell", function () {
     it("H-4: should prevent re-registration during grace period", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
         "Original",
         checkInPeriod,
         gracePeriod,
@@ -1645,7 +1660,7 @@ describe("Farewell", function () {
           checkInPeriod,
           gracePeriod,
         ),
-      ).to.be.revertedWith("check-in period expired");
+      ).to.be.revertedWithCustomError(FarewellContract, "CheckInExpired");
     });
 
     it("H-4: should update name on re-registration", async function () {
@@ -1851,7 +1866,7 @@ describe("Farewell", function () {
     });
 
     it("I-4: should reject addMessageWithReward with zero reward", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      const tx = await FarewellContract.connect(signers.owner).register();
       await tx.wait();
 
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
@@ -1875,7 +1890,7 @@ describe("Farewell", function () {
           payloadContentHash,
           { value: 0 },
         ),
-      ).to.be.revertedWith("must include reward");
+      ).to.be.revertedWithCustomError(FarewellContract, "MustIncludeReward");
     });
   });
 });

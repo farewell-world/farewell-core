@@ -12,15 +12,13 @@ type Signers = {
 async function deployFixture() {
   const factory = (await ethers.getContractFactory("ClearFarewell")) as ClearFarewell__factory;
   const clearFarewellContract = (await factory.deploy()) as ClearFarewell;
-  const clearFarewellContractAddress = await clearFarewellContract.getAddress();
 
-  return { clearFarewellContract, clearFarewellContractAddress };
+  return { clearFarewellContract };
 }
 
 describe("ClearFarewell", function () {
   let signers: Signers;
   let clearFarewellContract: ClearFarewell;
-  let clearFarewellContractAddress: ClearFarewell;
 
   before(async function () {
     // Initializes signers
@@ -29,7 +27,7 @@ describe("ClearFarewell", function () {
   });
 
   beforeEach(async () => {
-    ({ clearFarewellContract, clearFarewellContractAddress } = await deployFixture());
+    ({ clearFarewellContract } = await deployFixture());
   });
 
   it("user should be able to add a message after registration", async function () {

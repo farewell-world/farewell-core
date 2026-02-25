@@ -1,15 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.27;
 
-import {
-    FHE,
-    euint256,
-    euint128,
-    euint32,
-    externalEuint32,
-    externalEuint128,
-    externalEuint256
-} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint256, euint128, externalEuint128, externalEuint256} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 // OZ upgradeable imports
@@ -19,7 +11,15 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 /// @title Groth16 verifier interface for zk-email proofs
+/// @author Farewell Protocol
+/// @notice Interface for Groth16 zk-SNARK proof verification used in zk-email delivery proofs
 interface IGroth16Verifier {
+    /// @notice Verify a Groth16 proof
+    /// @param pA First proof element (G1 point)
+    /// @param pB Second proof element (G2 point)
+    /// @param pC Third proof element (G1 point)
+    /// @param pubSignals Public signals for the proof
+    /// @return True if the proof is valid, false otherwise
     function verifyProof(
         uint256[2] calldata pA,
         uint256[2][2] calldata pB,
@@ -29,6 +29,7 @@ interface IGroth16Verifier {
 }
 
 /// @title Farewell (email-recipient version)
+/// @author Farewell Protocol
 /// @notice On-chain posthumous message release via timeout.
 /// - Recipients are EMAILS (string), not wallet addresses.
 /// - Anyone can call `claim` after timeout; we emit an event with (email, data).
@@ -55,20 +56,20 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         // Encrypted recipient email (coprocessor-backed euints) + encrypted skShare.
         EncryptedString recipientEmail; // encrypted recipient e-mail
         euint128 _skShare;
+        // ZK-Email reward fields
+        uint256 reward; // Per-message ETH reward for delivery
+        uint256 provenRecipientsBitmap; // Bitmap tracking which recipients have been proven (up to 256)
+        bytes32[] recipientEmailHashes; // Poseidon hashes of each recipient email (for multi-recipient)
+        bytes32 payloadContentHash; // Keccak256 hash of decrypted payload content
+        bytes32 hash; // Hash of all input attributes
         // Your payload (already encrypted off-chain, e.g., tar+gpg) is fine to be public bytes
         bytes payload; // encrypted message
         uint64 createdAt;
-        bool claimed;
         address claimedBy;
+        bool claimed;
+        bool revoked; // Marks if message has been revoked by owner (cannot be claimed)
         /// @notice Public message stored in cleartext - visible to anyone
         string publicMessage;
-        bytes32 hash; // Hash of all input attributes
-        bool revoked; // Marks if message has been revoked by owner (cannot be claimed)
-        // ZK-Email reward fields
-        uint256 reward; // Per-message ETH reward for delivery
-        bytes32[] recipientEmailHashes; // Poseidon hashes of each recipient email (for multi-recipient)
-        bytes32 payloadContentHash; // Keccak256 hash of decrypted payload content
-        uint256 provenRecipientsBitmap; // Bitmap tracking which recipients have been proven (up to 256)
     }
 
     struct CouncilMember {
@@ -108,20 +109,74 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         Message[] messages;
     }
 
-    mapping(address => User) public users;
-    mapping(address => CouncilMember[]) public councils; // Per-user council members
-    mapping(address => mapping(address => bool)) public councilMembers; // Quick lookup: user => member => isMember
-    mapping(address => GraceVote) internal graceVotes; // Per-user grace period voting
-    mapping(address => address[]) public memberToUsers; // Reverse index: member => users they're council for
-    mapping(bytes32 => bool) public rewardsClaimed; // Track if reward was already claimed (user+messageIndex hash)
+    // --- Custom Errors ---
+    error NotRegistered();
+    error UserDeceased();
+    error UserAlive();
+    error InvalidIndex();
+    error AlreadyClaimed();
+    error MessageWasRevoked();
+    error AlreadyRevoked();
+    error NotDeliverable();
+    error InvalidMember();
+    error CannotAddSelf();
+    error AlreadyCouncilMember();
+    error CouncilFull();
+    error NotCouncilMember();
+    error MemberNotFound();
+    error NotInGracePeriod();
+    error GracePeriodEnded();
+    error VoteAlreadyDecided();
+    error AlreadyVoted();
+    error MustDepositSomething();
+    error EthTransferFailed();
+    error CheckInPeriodTooShort();
+    error GracePeriodTooShort();
+    error NameTooLong();
+    error CheckInExpired();
+    error EmailLenZero();
+    error EmailTooLong();
+    error NoLimbs();
+    error BadPayloadSize();
+    error PayloadTooLong();
+    error LimbsMismatch();
+    error MustIncludeReward();
+    error MustHaveRecipient();
+    error TooManyRecipients();
+    error NotClaimant();
+    error AlreadyProven();
+    error InvalidProof();
+    error VerifierNotConfigured();
+    error NoReward();
+    error NotAllRecipientsProven();
+    error AlreadyRewardClaimed();
+    error StillExclusiveForNotifier();
+    error UserVotedAlive();
+    error NotTimedOut();
+    error MessageNotClaimed();
 
-    // Mapping to track message hashes for efficient lookup
-    mapping(bytes32 => bool) public messageHashes;
+    /// @notice Mapping of user address to user data
+    mapping(address user => User config) public users;
+    /// @notice Mapping of user address to their council members
+    mapping(address user => CouncilMember[] members) public councils;
+    /// @notice Quick lookup: user => member => isMember
+    mapping(address user => mapping(address member => bool isMember)) public councilMembers;
+    /// @notice Per-user grace period voting state
+    mapping(address user => GraceVote vote) internal graceVotes;
+    /// @notice Reverse index: member => users they're council for
+    mapping(address member => address[] users) public memberToUsers;
+    /// @notice Track if reward was already claimed (user+messageIndex hash)
+    mapping(bytes32 rewardKey => bool claimed) public rewardsClaimed;
 
-    // ZK-Email verifier storage
-    address public zkEmailVerifier; // Groth16 verifier contract address
-    mapping(bytes32 => mapping(uint256 => bool)) public trustedDkimKeys; // domainHash => pubkeyHash => isValid
-    mapping(address => uint256) public lockedRewards; // Total locked rewards per user
+    /// @notice Mapping to track message hashes for efficient lookup
+    mapping(bytes32 msgHash => bool exists) public messageHashes;
+
+    /// @notice Groth16 verifier contract address for zk-email proofs
+    address public zkEmailVerifier;
+    /// @notice Trusted DKIM public key hashes per domain
+    mapping(bytes32 domain => mapping(uint256 pubkeyHash => bool trusted)) public trustedDkimKeys;
+    /// @notice Total locked rewards per user
+    mapping(address user => uint256 amount) public lockedRewards;
 
     // Solidity automatically initializes all storage variables to zero by default.
     uint64 private totalUsers;
@@ -134,36 +189,131 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     // Events
     // -----------------------
 
-    event UserUpdated(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
-    event UserRegistered(address indexed user, uint64 checkInPeriod, uint64 gracePeriod, uint64 registeredOn);
-    event Ping(address indexed user, uint64 when);
-    event Deceased(address indexed user, uint64 when, address indexed notifier);
+    /// @notice Emitted when a user's registration settings are updated
+    /// @param user The user's address
+    /// @param checkInPeriod The new check-in period in seconds
+    /// @param gracePeriod The new grace period in seconds
+    /// @param registeredOn The original registration timestamp
+    event UserUpdated(
+        address indexed user,
+        uint64 indexed checkInPeriod,
+        uint64 indexed gracePeriod,
+        uint64 registeredOn
+    );
 
+    /// @notice Emitted when a new user registers
+    /// @param user The user's address
+    /// @param checkInPeriod The check-in period in seconds
+    /// @param gracePeriod The grace period in seconds
+    /// @param registeredOn The registration timestamp
+    event UserRegistered(
+        address indexed user,
+        uint64 indexed checkInPeriod,
+        uint64 indexed gracePeriod,
+        uint64 registeredOn
+    );
+
+    /// @notice Emitted when a user performs a check-in
+    /// @param user The user's address
+    /// @param when The timestamp of the check-in
+    event Ping(address indexed user, uint64 indexed when);
+
+    /// @notice Emitted when a user is marked as deceased
+    /// @param user The user's address
+    /// @param when The timestamp of the deceased marking
+    /// @param notifier The address that triggered the deceased marking
+    event Deceased(address indexed user, uint64 indexed when, address indexed notifier);
+
+    /// @notice Emitted when a message is added
+    /// @param user The owner's address
+    /// @param index The index of the new message
     event MessageAdded(address indexed user, uint256 indexed index);
-    event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
-    event MessageEdited(address indexed user, uint256 indexed index);
-    event MessageRevoked(address indexed user, uint256 indexed index);
-    event CouncilMemberAdded(address indexed user, address indexed member);
-    event CouncilMemberRemoved(address indexed user, address indexed member);
-    event GraceVoteCast(address indexed user, address indexed voter, bool votedAlive);
-    event StatusDecided(address indexed user, bool isAlive);
-    event DepositAdded(address indexed user, uint256 amount);
-    event RewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, uint256 amount);
-    event DeliveryProven(address indexed user, uint256 indexed messageIndex, uint256 recipientIndex, address claimer);
-    event ZkEmailVerifierSet(address verifier);
-    event DkimKeyUpdated(bytes32 domain, uint256 pubkeyHash, bool trusted);
 
+    /// @notice Emitted when a message is claimed
+    /// @param user The owner's address
+    /// @param index The message index
+    /// @param claimer The address that claimed the message
+    event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
+
+    /// @notice Emitted when a message is edited
+    /// @param user The owner's address
+    /// @param index The message index
+    event MessageEdited(address indexed user, uint256 indexed index);
+
+    /// @notice Emitted when a message is revoked
+    /// @param user The owner's address
+    /// @param index The message index
+    event MessageRevoked(address indexed user, uint256 indexed index);
+
+    /// @notice Emitted when a council member is added
+    /// @param user The user's address
+    /// @param member The council member's address
+    event CouncilMemberAdded(address indexed user, address indexed member);
+
+    /// @notice Emitted when a council member is removed
+    /// @param user The user's address
+    /// @param member The removed council member's address
+    event CouncilMemberRemoved(address indexed user, address indexed member);
+
+    /// @notice Emitted when a council member casts a grace period vote
+    /// @param user The user being voted on
+    /// @param voter The council member casting the vote
+    /// @param votedAlive True if the voter voted alive, false if voted dead
+    event GraceVoteCast(address indexed user, address indexed voter, bool indexed votedAlive);
+
+    /// @notice Emitted when the council reaches a majority decision
+    /// @param user The user whose status was decided
+    /// @param isAlive True if the council voted alive, false if deceased
+    event StatusDecided(address indexed user, bool indexed isAlive);
+
+    /// @notice Emitted when ETH is deposited for delivery costs
+    /// @param user The depositing user's address
+    /// @param amount The deposited ETH amount
+    event DepositAdded(address indexed user, uint256 indexed amount);
+
+    /// @notice Emitted when a delivery reward is claimed after proof submission
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    /// @param claimer The address claiming the reward
+    /// @param amount The reward amount in wei
+    event RewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, uint256 amount);
+
+    /// @notice Emitted when a zk-email delivery proof is verified for a recipient
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    /// @param recipientIndex The recipient index within the message
+    /// @param claimer The address that submitted the proof
+    event DeliveryProven(
+        address indexed user,
+        uint256 indexed messageIndex,
+        uint256 recipientIndex,
+        address indexed claimer
+    );
+
+    /// @notice Emitted when the zk-email verifier contract address is updated
+    /// @param verifier The new verifier contract address
+    event ZkEmailVerifierSet(address indexed verifier);
+
+    /// @notice Emitted when a DKIM key trust status is updated
+    /// @param domain The domain hash
+    /// @param pubkeyHash The DKIM public key hash
+    /// @param trusted Whether the key is now trusted
+    event DkimKeyUpdated(bytes32 domain, uint256 indexed pubkeyHash, bool indexed trusted);
+
+    /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {
-        require(users[user].lastCheckIn != 0, "not registered");
+        if (users[user].lastCheckIn == 0) revert NotRegistered();
         _;
     }
 
+    /// @notice Constructor disables initializers to prevent direct deployment
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    // REPLACES constructors & default constants wiring, sets initial owner
+    /// @notice Initialize the contract, sets initial owner and coprocessor config
+    /// @dev Replaces constructor; sets owner, upgradeable base contracts, and FHEVM coprocessor
     function initialize() public initializer {
         __Ownable_init(msg.sender); // set initial owner (OZ v5 style)
         __UUPSUpgradeable_init();
@@ -179,44 +329,50 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig());
     }
 
-    // UUPS authorization hook
-    function _authorizeUpgrade(address newImpl) internal override onlyOwner {}
+    /// @notice Authorize an upgrade to a new implementation; authorization enforced by onlyOwner modifier
+    /// @param newImpl The new implementation address
+    function _authorizeUpgrade(address newImpl) internal override onlyOwner {} // solhint-disable-line no-empty-blocks
 
     /// @notice Expose the protocol id (useful for clients/frontends)
+    /// @return The confidential protocol ID from ZamaConfig
     function confidentialProtocolId() public view returns (uint256) {
         return ZamaConfig.getConfidentialProtocolId();
     }
 
     // --- User lifecycle ---
-    uint64 constant DEFAULT_CHECKIN = 30 days;
-    uint64 constant DEFAULT_GRACE = 7 days;
+    uint64 internal constant DEFAULT_CHECKIN = 30 days;
+    uint64 internal constant DEFAULT_GRACE = 7 days;
 
     // --- Message constants ---
     /// @notice Maximum email byte length (emails are padded to this length to prevent length leakage)
     // Reduced from 256 to fit within 2048-bit FHEVM limit (7 limbs = 1792 bits + 128 bits s = 1920 bits)
-    uint32 constant MAX_EMAIL_BYTE_LEN = 224;
+    uint32 internal constant MAX_EMAIL_BYTE_LEN = 224;
     /// @notice Maximum payload byte length (optional, for future payload padding)
-    uint32 constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
+    uint32 internal constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
 
     // --- Reward constants ---
-    uint256 constant BASE_REWARD = 0.01 ether; // Base reward per message
-    uint256 constant REWARD_PER_KB = 0.005 ether; // Additional reward per KB of payload
+    uint256 internal constant BASE_REWARD = 0.01 ether; // Base reward per message
+    uint256 internal constant REWARD_PER_KB = 0.005 ether; // Additional reward per KB of payload
 
     // --- Council constants ---
-    uint256 constant MAX_COUNCIL_SIZE = 20;
+    uint256 internal constant MAX_COUNCIL_SIZE = 20;
 
+    /// @notice Internal registration logic for new and existing users
+    /// @param name Optional display name (max 100 bytes)
+    /// @param checkInPeriod Check-in period in seconds (min 1 day)
+    /// @param gracePeriod Grace period in seconds (min 1 day)
     function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) internal {
-        require(checkInPeriod >= 1 days, "checkInPeriod too short");
-        require(gracePeriod >= 1 days, "gracePeriod too short");
-        require(bytes(name).length <= 100, "name too long");
+        if (!(checkInPeriod > 1 days - 1)) revert CheckInPeriodTooShort();
+        if (!(gracePeriod > 1 days - 1)) revert GracePeriodTooShort();
+        if (!(bytes(name).length < 101)) revert NameTooLong();
 
         User storage u = users[msg.sender];
 
         if (u.lastCheckIn != 0) {
             // user is already registered, update configs
-            require(!u.deceased, "user is deceased");
+            if (u.deceased) revert UserDeceased();
             uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
-            require(block.timestamp <= checkInEnd, "check-in period expired");
+            if (!(block.timestamp < checkInEnd + 1)) revert CheckInExpired();
             u.name = name;
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
@@ -229,81 +385,112 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             u.lastCheckIn = uint64(block.timestamp);
             u.registeredOn = uint64(block.timestamp);
             u.deceased = false;
-            totalUsers++;
+            ++totalUsers;
             emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         }
 
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
-    function register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) external {
+    /// @notice Register with a name and custom check-in and grace periods
+    /// @param name Optional display name (max 100 bytes)
+    /// @param checkInPeriod Check-in period in seconds (min 1 day)
+    /// @param gracePeriod Grace period in seconds (min 1 day)
+    function register(string calldata name, uint64 checkInPeriod, uint64 gracePeriod) external {
         _register(name, checkInPeriod, gracePeriod);
     }
 
+    /// @notice Register with custom check-in and grace periods and no name
+    /// @param checkInPeriod Check-in period in seconds (min 1 day)
+    /// @param gracePeriod Grace period in seconds (min 1 day)
     function register(uint64 checkInPeriod, uint64 gracePeriod) external {
         _register("", checkInPeriod, gracePeriod);
     }
 
-    function register(string memory name) external {
+    /// @notice Register with a name and default check-in and grace periods
+    /// @param name Optional display name (max 100 bytes)
+    function register(string calldata name) external {
         uint64 checkInPeriod = DEFAULT_CHECKIN;
         uint64 gracePeriod = DEFAULT_GRACE;
         _register(name, checkInPeriod, gracePeriod);
     }
 
+    /// @notice Register with default check-in and grace periods and no name
     function register() external {
         uint64 checkInPeriod = DEFAULT_CHECKIN;
         uint64 gracePeriod = DEFAULT_GRACE;
         _register("", checkInPeriod, gracePeriod);
     }
 
+    /// @notice Check if an address is registered
+    /// @param user The address to check
+    /// @return True if the user is registered
     function isRegistered(address user) external view returns (bool) {
         return users[user].lastCheckIn != 0;
     }
 
+    /// @notice Get the display name of a registered user
+    /// @param user The user's address
+    /// @return The user's display name
     function getUserName(address user) external view returns (string memory) {
         User storage u = users[user];
-        require(u.lastCheckIn != 0, "not registered");
+        if (u.lastCheckIn == 0) revert NotRegistered();
         return u.name;
     }
 
     /// @notice Update the user's display name
-    function setName(string memory newName) external {
+    /// @param newName The new display name (max 100 bytes)
+    function setName(string calldata newName) external {
         User storage u = users[msg.sender];
-        require(u.lastCheckIn != 0, "not registered");
-        require(bytes(newName).length <= 100, "name too long");
+        if (u.lastCheckIn == 0) revert NotRegistered();
+        if (!(bytes(newName).length < 101)) revert NameTooLong();
         u.name = newName;
         emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
     }
 
+    /// @notice Get the registration timestamp of a user
+    /// @param user The user's address
+    /// @return The registration timestamp
     function getRegisteredOn(address user) external view returns (uint64) {
         User storage u = users[user];
-        require(u.lastCheckIn != 0, "not registered");
+        if (u.lastCheckIn == 0) revert NotRegistered();
         return u.registeredOn;
     }
 
+    /// @notice Get the last check-in timestamp of a user
+    /// @param user The user's address
+    /// @return The last check-in timestamp
     function getLastCheckIn(address user) external view returns (uint64) {
         User storage u = users[user];
-        require(u.lastCheckIn != 0, "not registered");
+        if (u.lastCheckIn == 0) revert NotRegistered();
         return u.lastCheckIn;
     }
 
+    /// @notice Get the deceased status of a user
+    /// @param user The user's address
+    /// @return True if the user is marked deceased
     function getDeceasedStatus(address user) external view returns (bool) {
         User storage u = users[user];
-        require(u.lastCheckIn != 0, "not registered");
+        if (u.lastCheckIn == 0) revert NotRegistered();
         return u.deceased;
     }
 
+    /// @notice Get the total number of registered users
+    /// @return The total count of registered users
     function getNumberOfRegisteredUsers() external view returns (uint64) {
         return totalUsers;
     }
 
+    /// @notice Get the total number of messages added across all users
+    /// @return The total count of messages
     function getNumberOfAddedMessages() external view returns (uint64) {
         return totalMessages;
     }
 
+    /// @notice Reset the check-in timer to prove liveness
     function ping() external onlyRegistered(msg.sender) {
         User storage u = users[msg.sender];
-        require(!u.deceased, "user marked deceased");
+        if (u.deceased) revert UserDeceased();
 
         // If user was voted finalAlive, clear that status and reset vote state
         // so they re-enter the normal liveness cycle
@@ -319,6 +506,56 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     // --- Messages ---
 
+    /// @notice Validate message input parameters (email, limbs, payload)
+    /// @param emailByteLen Original email byte length before padding
+    /// @param limbs Encrypted email limbs
+    /// @param payload Encrypted message payload
+    function _validateMessageInput(
+        uint32 emailByteLen,
+        externalEuint256[] calldata limbs,
+        bytes calldata payload
+    ) internal pure {
+        if (emailByteLen == 0) revert EmailLenZero();
+        if (!(emailByteLen < MAX_EMAIL_BYTE_LEN + 1)) revert EmailTooLong();
+        if (limbs.length == 0) revert NoLimbs();
+        if (payload.length == 0) revert BadPayloadSize();
+        if (!(payload.length < MAX_PAYLOAD_BYTE_LEN + 1)) revert PayloadTooLong();
+        // All emails must be padded to MAX_EMAIL_BYTE_LEN (8 limbs for 256 bytes)
+        if (limbs.length != (uint256(MAX_EMAIL_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
+    }
+
+    /// @notice Store encrypted email limbs and grant FHE access to the caller
+    /// @param recipientEmail Storage reference to the encrypted string struct
+    /// @param limbs Encrypted email limbs from the caller
+    /// @param emailByteLen Original email byte length
+    /// @param inputProof FHE input proof for the encrypted values
+    function _storeEncryptedEmail(
+        EncryptedString storage recipientEmail,
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        bytes calldata inputProof
+    ) internal {
+        recipientEmail.limbs = new euint256[](limbs.length);
+        for (uint256 i = 0; i < limbs.length; ) {
+            euint256 v = FHE.fromExternal(limbs[i], inputProof);
+            recipientEmail.limbs[i] = v;
+            FHE.allowThis(v);
+            FHE.allow(v, msg.sender);
+            unchecked {
+                ++i;
+            }
+        }
+        recipientEmail.byteLen = emailByteLen;
+    }
+
+    /// @notice Internal function to add an encrypted message for the caller
+    /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
+    /// @param emailByteLen Original email byte length before padding
+    /// @param encSkShare Encrypted secret key share (euint128)
+    /// @param payload AES-encrypted message payload
+    /// @param inputProof FHE input proof for the encrypted values
+    /// @param publicMessage Optional cleartext public message
+    /// @return index The index of the newly added message
     function _addMessage(
         externalEuint256[] calldata limbs,
         uint32 emailByteLen,
@@ -327,31 +564,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bytes calldata inputProof,
         string memory publicMessage
     ) internal onlyRegistered(msg.sender) returns (uint256 index) {
-        User storage u = users[msg.sender];
-        require(emailByteLen > 0, "email len=0");
-        require(emailByteLen <= MAX_EMAIL_BYTE_LEN, "email too long");
-        require(limbs.length > 0, "no limbs");
-        require(payload.length > 0, "bad payload size");
-        require(payload.length <= MAX_PAYLOAD_BYTE_LEN, "payload too long");
-        // All emails must be padded to MAX_EMAIL_BYTE_LEN (8 limbs for 256 bytes)
-        require(limbs.length == (uint256(MAX_EMAIL_BYTE_LEN) + 31) / 32, "limbs must match padded length");
+        _validateMessageInput(emailByteLen, limbs, payload);
 
+        User storage u = users[msg.sender];
         index = u.messages.length;
         u.messages.push();
         Message storage m = u.messages[index];
 
-        // allocate and fill limbs directly, avoid extra locals
-        m.recipientEmail.limbs = new euint256[](limbs.length);
-        for (uint i = 0; i < limbs.length; ) {
-            euint256 v = FHE.fromExternal(limbs[i], inputProof);
-            m.recipientEmail.limbs[i] = v;
-            FHE.allowThis(v);
-            FHE.allow(v, msg.sender);
-            unchecked {
-                ++i;
-            }
-        }
-        m.recipientEmail.byteLen = emailByteLen;
+        _storeEncryptedEmail(m.recipientEmail, limbs, emailByteLen, inputProof);
 
         // assign directly, no temp var
         m._skShare = FHE.fromExternal(encSkShare, inputProof);
@@ -367,10 +587,17 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         m.hash = messageHash;
         messageHashes[messageHash] = true; // Track hash for lookup
 
-        totalMessages++;
+        ++totalMessages;
         emit MessageAdded(msg.sender, index);
     }
 
+    /// @notice Add an encrypted message without a public message
+    /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
+    /// @param emailByteLen Original email byte length before padding
+    /// @param encSkShare Encrypted secret key share (euint128)
+    /// @param payload AES-encrypted message payload
+    /// @param inputProof FHE input proof for the encrypted values
+    /// @return index The index of the newly added message
     function addMessage(
         externalEuint256[] calldata limbs,
         uint32 emailByteLen,
@@ -381,6 +608,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, "");
     }
 
+    /// @notice Add an encrypted message with an optional public message
+    /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
+    /// @param emailByteLen Original email byte length before padding
+    /// @param encSkShare Encrypted secret key share (euint128)
+    /// @param payload AES-encrypted message payload
+    /// @param inputProof FHE input proof for the encrypted values
+    /// @param publicMessage Optional cleartext public message
+    /// @return index The index of the newly added message
     function addMessage(
         externalEuint256[] calldata limbs,
         uint32 emailByteLen,
@@ -401,6 +636,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param publicMessage Public message (optional)
     /// @param recipientEmailHashes Poseidon hashes of all recipient emails
     /// @param payloadContentHash Keccak256 hash of decrypted payload content
+    /// @return index The index of the newly added message
     function addMessageWithReward(
         externalEuint256[] calldata limbs,
         uint32 emailByteLen,
@@ -411,9 +647,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bytes32[] calldata recipientEmailHashes,
         bytes32 payloadContentHash
     ) external payable returns (uint256 index) {
-        require(msg.value > 0, "must include reward");
-        require(recipientEmailHashes.length > 0, "must have at least one recipient");
-        require(recipientEmailHashes.length <= 256, "too many recipients");
+        if (msg.value == 0) revert MustIncludeReward();
+        if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
+        if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
 
         index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
 
@@ -429,6 +665,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         lockedRewards[msg.sender] += msg.value;
     }
 
+    /// @notice Get the number of messages for a user
+    /// @param user The user's address
+    /// @return The number of messages
     function messageCount(address user) external view onlyRegistered(user) returns (uint256) {
         return users[user].messages.length;
     }
@@ -437,12 +676,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param index The index of the message to revoke
     function revokeMessage(uint256 index) external nonReentrant onlyRegistered(msg.sender) {
         User storage u = users[msg.sender];
-        require(!u.deceased, "user is deceased");
-        require(index < u.messages.length, "invalid index");
+        if (u.deceased) revert UserDeceased();
+        if (!(index < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[index];
-        require(!m.revoked, "already revoked");
-        require(!m.claimed, "cannot revoke claimed message");
+        if (m.revoked) revert AlreadyRevoked();
+        if (m.claimed) revert AlreadyClaimed();
 
         m.revoked = true;
 
@@ -452,7 +691,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             m.reward = 0;
             lockedRewards[msg.sender] -= refund;
             (bool success, ) = payable(msg.sender).call{value: refund}("");
-            require(success, "ETH transfer failed");
+            if (!success) revert EthTransferFailed();
         }
 
         emit MessageRevoked(msg.sender, index);
@@ -460,6 +699,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     /// @notice Edit a message (only owner, not deceased, not claimed, not revoked)
     /// @param index The index of the message to edit
+    /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
+    /// @param emailByteLen Original email byte length before padding
+    /// @param encSkShare Encrypted secret key share (euint128)
+    /// @param payload AES-encrypted message payload
+    /// @param inputProof FHE input proof for the encrypted values
+    /// @param publicMessage Optional cleartext public message
     function editMessage(
         uint256 index,
         externalEuint256[] calldata limbs,
@@ -470,33 +715,16 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         string calldata publicMessage
     ) external onlyRegistered(msg.sender) {
         User storage u = users[msg.sender];
-        require(!u.deceased, "user is deceased");
-        require(index < u.messages.length, "invalid index");
+        if (u.deceased) revert UserDeceased();
+        if (!(index < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[index];
-        require(!m.revoked, "cannot edit revoked message");
-        require(!m.claimed, "cannot edit claimed message");
-        require(emailByteLen > 0, "email len=0");
-        require(emailByteLen <= MAX_EMAIL_BYTE_LEN, "email too long");
-        require(limbs.length > 0, "no limbs");
-        require(payload.length > 0, "bad payload size");
-        require(payload.length <= MAX_PAYLOAD_BYTE_LEN, "payload too long");
-        require(limbs.length == (uint256(MAX_EMAIL_BYTE_LEN) + 31) / 32, "limbs must match padded length");
+        if (m.revoked) revert MessageWasRevoked();
+        if (m.claimed) revert AlreadyClaimed();
+        _validateMessageInput(emailByteLen, limbs, payload);
 
-        // Update encrypted email limbs
-        m.recipientEmail.limbs = new euint256[](limbs.length);
-        for (uint i = 0; i < limbs.length; ) {
-            euint256 v = FHE.fromExternal(limbs[i], inputProof);
-            m.recipientEmail.limbs[i] = v;
-            FHE.allowThis(v);
-            FHE.allow(v, msg.sender);
-            unchecked {
-                ++i;
-            }
-        }
-        m.recipientEmail.byteLen = emailByteLen;
-
-        // Update encrypted skShare
+        // Update encrypted email and skShare
+        _storeEncryptedEmail(m.recipientEmail, limbs, emailByteLen, inputProof);
         m._skShare = FHE.fromExternal(encSkShare, inputProof);
         FHE.allowThis(m._skShare);
         FHE.allow(m._skShare, msg.sender);
@@ -516,6 +744,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     /// @notice Compute the hash of message inputs without adding the message
     /// @dev Useful for checking if a message with these inputs already exists
+    /// @param limbs Encrypted email limbs
+    /// @param emailByteLen Original email byte length
+    /// @param encSkShare Encrypted secret key share
+    /// @param payload Encrypted message payload
+    /// @param publicMessage Optional cleartext public message
+    /// @return The keccak256 hash of all message inputs
     function computeMessageHash(
         externalEuint256[] calldata limbs,
         uint32 emailByteLen,
@@ -531,14 +765,15 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @dev Block timestamps can be manipulated by miners/validators within ~15 second windows.
     ///      Impact is low given reasonable check-in periods, but worth noting.
     /// @dev Users who have been voted "alive" by council cannot be marked deceased.
+    /// @param user The user address to mark as deceased
     function markDeceased(address user) external onlyRegistered(user) {
         User storage u = users[user];
-        require(!u.deceased, "user already deceased");
-        require(!u.finalAlive, "user voted alive by council");
+        if (u.deceased) revert UserDeceased();
+        if (u.finalAlive) revert UserVotedAlive();
 
         // timeout condition: now > lastCheckIn + checkInPeriod + grace
         uint256 deadline = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
-        require(block.timestamp > deadline, "not timed out");
+        if (!(block.timestamp > deadline)) revert NotTimedOut();
 
         // the user is considered from now on as deceased
         u.deceased = true;
@@ -558,26 +793,28 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @dev NOTE: Once FHE.allow() is called for a claimer, that permission persists.
     ///      If multiple parties claim different messages from the same user, they all get decryption access.
     ///      This may be intended behavior, but should be considered when designing the protocol.
+    /// @param user The deceased user's address
+    /// @param index The message index to claim
     function claim(address user, uint256 index) external {
         User storage u = users[user];
-        require(u.deceased, "not deliverable");
-        require(index < u.messages.length, "invalid index");
+        if (!u.deceased) revert NotDeliverable();
+        if (!(index < u.messages.length)) revert InvalidIndex();
 
         address claimerAddress = msg.sender;
 
         // if within 24h of notification, only the notifier can claim
-        if (block.timestamp <= uint256(u.notifier.notificationTime) + 24 hours) {
-            require(claimerAddress == u.notifier.notifierAddress, "still exclusive for the notifier");
+        if (!(block.timestamp > uint256(u.notifier.notificationTime) + 24 hours)) {
+            if (claimerAddress != u.notifier.notifierAddress) revert StillExclusiveForNotifier();
         }
 
         Message storage m = u.messages[index];
-        require(!m.revoked, "message was revoked");
-        require(!m.claimed, "already claimed");
+        if (m.revoked) revert MessageWasRevoked();
+        if (m.claimed) revert AlreadyClaimed();
         m.claimed = true;
         m.claimedBy = claimerAddress;
 
         FHE.allow(m._skShare, claimerAddress);
-        for (uint i = 0; i < m.recipientEmail.limbs.length; ) {
+        for (uint256 i = 0; i < m.recipientEmail.limbs.length; ) {
             FHE.allow(m.recipientEmail.limbs[i], claimerAddress);
             unchecked {
                 ++i;
@@ -609,18 +846,18 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         ZkEmailProof calldata proof
     ) external {
         User storage u = users[user];
-        require(u.deceased, "user not deceased");
+        if (!u.deceased) revert UserAlive();
 
         Message storage m = u.messages[messageIndex];
-        require(m.claimed, "message not claimed");
-        require(m.claimedBy == msg.sender, "not the claimer");
-        require(recipientIndex < m.recipientEmailHashes.length, "invalid recipient");
+        if (!m.claimed) revert MessageNotClaimed();
+        if (m.claimedBy != msg.sender) revert NotClaimant();
+        if (!(recipientIndex < m.recipientEmailHashes.length)) revert InvalidIndex();
 
         // Check not already proven for this recipient
-        require((m.provenRecipientsBitmap & (1 << recipientIndex)) == 0, "already proven");
+        if ((m.provenRecipientsBitmap & (1 << recipientIndex)) != 0) revert AlreadyProven();
 
         // Verify proof
-        require(_verifyZkEmailProof(proof, m, recipientIndex), "invalid proof");
+        if (!_verifyZkEmailProof(proof, m, recipientIndex)) revert InvalidProof();
 
         // Mark recipient as proven
         m.provenRecipientsBitmap |= (1 << recipientIndex);
@@ -629,6 +866,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     }
 
     /// @notice Internal function to verify zk-email proof
+    /// @param proof The Groth16 proof to verify
+    /// @param m The message storage reference
+    /// @param recipientIndex The recipient index to verify
+    /// @return True if the proof is valid
     function _verifyZkEmailProof(
         ZkEmailProof calldata proof,
         Message storage m,
@@ -658,11 +899,13 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         }
 
         // 4. Verify Groth16 proof
-        require(zkEmailVerifier != address(0), "verifier not configured");
+        if (zkEmailVerifier == address(0)) revert VerifierNotConfigured();
         return IGroth16Verifier(zkEmailVerifier).verifyProof(proof.pA, proof.pB, proof.pC, proof.publicSignals);
     }
 
     /// @notice Check if a DKIM public key hash is trusted
+    /// @param pubkeyHash The DKIM public key hash to check
+    /// @return True if the key hash is trusted
     function _isTrustedDkimKey(uint256 pubkeyHash) internal view returns (bool) {
         // Check against global trusted keys (bytes32(0) represents global/any domain)
         return trustedDkimKeys[bytes32(0)][pubkeyHash];
@@ -672,6 +915,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     ///         by authorized parties via FHE.allow() permissions)
     /// @param owner The address of the message owner
     /// @param index The index of the message to retrieve
+    /// @return skShare The encrypted secret key share handle
+    /// @return encodedRecipientEmail The encrypted recipient email limbs
+    /// @return emailByteLen The original email byte length
+    /// @return payload The AES-encrypted message payload
+    /// @return publicMessage The optional cleartext public message
+    /// @return hash The hash of all message inputs
     function retrieve(
         address owner,
         uint256 index
@@ -688,18 +937,18 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         )
     {
         User storage u = users[owner];
-        require(index < u.messages.length, "invalid index");
+        if (!(index < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[index];
-        require(!m.revoked, "message was revoked");
+        if (m.revoked) revert MessageWasRevoked();
 
         bool isOwner = (msg.sender == owner);
 
         if (!isOwner) {
             // Only non-owners must satisfy delivery rules
-            require(u.deceased, "owner not deceased");
-            require(m.claimed, "message not claimed");
-            require(m.claimedBy == msg.sender, "not claimant");
+            if (!u.deceased) revert NotDeliverable();
+            if (!m.claimed) revert MessageNotClaimed();
+            if (m.claimedBy != msg.sender) revert NotClaimant();
         }
 
         skShare = m._skShare;
@@ -715,11 +964,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Add a council member (no stake required, max 20 members)
     /// @param member The address to add as council member
     function addCouncilMember(address member) external onlyRegistered(msg.sender) {
-        require(member != address(0), "invalid member");
-        require(member != msg.sender, "cannot add self");
+        if (member == address(0)) revert InvalidMember();
+        if (member == msg.sender) revert CannotAddSelf();
 
-        require(!councilMembers[msg.sender][member], "already a member");
-        require(councils[msg.sender].length < MAX_COUNCIL_SIZE, "council full");
+        if (councilMembers[msg.sender][member]) revert AlreadyCouncilMember();
+        if (!(councils[msg.sender].length < MAX_COUNCIL_SIZE)) revert CouncilFull();
 
         councils[msg.sender].push(CouncilMember({member: member, joinedAt: uint64(block.timestamp)}));
         councilMembers[msg.sender][member] = true;
@@ -733,7 +982,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Remove a council member (can be called by user only)
     /// @param member The address to remove from council
     function removeCouncilMember(address member) external {
-        require(councilMembers[msg.sender][member], "not a member");
+        if (!councilMembers[msg.sender][member]) revert NotCouncilMember();
 
         CouncilMember[] storage council = councils[msg.sender];
         uint256 length = council.length;
@@ -751,9 +1000,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
                 GraceVote storage vote = graceVotes[msg.sender];
                 if (vote.hasVoted[member]) {
                     if (vote.votedAlive[member]) {
-                        vote.aliveVotes--;
+                        --vote.aliveVotes;
                     } else {
-                        vote.deadVotes--;
+                        --vote.deadVotes;
                     }
                     delete vote.hasVoted[member];
                     delete vote.votedAlive[member];
@@ -769,10 +1018,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
                 ++i;
             }
         }
-        revert("member not found");
+        revert MemberNotFound();
     }
 
     /// @notice Internal helper to reset grace vote state for a user
+    /// @param user The user whose grace vote state should be reset
     function _resetGraceVote(address user) internal {
         GraceVote storage vote = graceVotes[user];
         CouncilMember[] storage council = councils[user];
@@ -792,6 +1042,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     }
 
     /// @notice Internal helper to remove user from memberToUsers reverse index
+    /// @param member The council member address
+    /// @param userAddr The user address to remove from the member's list
     function _removeFromMemberToUsers(address member, address userAddr) internal {
         address[] storage userList = memberToUsers[member];
         uint256 length = userList.length;
@@ -809,57 +1061,76 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         }
     }
 
-    /// @notice Vote on a user's status during grace period
-    /// @param user The user to vote on
-    /// @param voteAlive True to vote the user is alive, false to vote dead
-    function voteOnStatus(address user, bool voteAlive) external onlyRegistered(user) {
-        require(councilMembers[user][msg.sender], "not a council member");
+    /// @notice Apply a majority-alive council decision: reset check-in and mark finalAlive
+    /// @param user The user whose status is being decided
+    /// @param u Storage reference to the user
+    /// @param vote Storage reference to the grace vote
+    function _applyAliveDecision(address user, User storage u, GraceVote storage vote) internal {
+        vote.decided = true;
+        vote.decisionAlive = true;
+        u.lastCheckIn = uint64(block.timestamp);
+        u.finalAlive = true;
+        emit StatusDecided(user, true);
+        emit Ping(user, u.lastCheckIn);
+    }
 
-        User storage u = users[user];
-        require(!u.deceased, "user already deceased");
-        require(!u.finalAlive, "status already finalized");
+    /// @notice Apply a majority-dead council decision: mark user as deceased
+    /// @param user The user whose status is being decided
+    /// @param u Storage reference to the user
+    /// @param vote Storage reference to the grace vote
+    function _applyDeadDecision(address user, User storage u, GraceVote storage vote) internal {
+        vote.decided = true;
+        vote.decisionAlive = false;
+        u.deceased = true;
+        u.notifier = Notifier({notificationTime: uint64(block.timestamp), notifierAddress: msg.sender});
+        emit StatusDecided(user, false);
+        emit Deceased(user, uint64(block.timestamp), msg.sender);
+    }
 
-        // Check user is in grace period
+    /// @notice Validate grace period voting preconditions and record a vote
+    /// @param user The user being voted on
+    /// @param u Storage reference to the user
+    /// @param vote Storage reference to the grace vote
+    /// @param voteAlive True if voting alive, false if voting dead
+    function _recordGraceVote(address user, User storage u, GraceVote storage vote, bool voteAlive) internal {
+        if (u.deceased) revert UserDeceased();
+        if (u.finalAlive) revert VoteAlreadyDecided();
+
         uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
         uint256 graceEnd = checkInEnd + uint256(u.gracePeriod);
-        require(block.timestamp > checkInEnd, "not in grace period");
-        require(block.timestamp <= graceEnd, "grace period ended");
+        if (!(block.timestamp > checkInEnd)) revert NotInGracePeriod();
+        if (!(block.timestamp < graceEnd + 1)) revert GracePeriodEnded();
 
-        GraceVote storage vote = graceVotes[user];
-        require(!vote.decided, "vote already decided");
-        require(!vote.hasVoted[msg.sender], "already voted");
+        if (vote.decided) revert VoteAlreadyDecided();
+        if (vote.hasVoted[msg.sender]) revert AlreadyVoted();
 
         vote.hasVoted[msg.sender] = true;
         vote.votedAlive[msg.sender] = voteAlive;
 
         if (voteAlive) {
-            vote.aliveVotes++;
+            ++vote.aliveVotes;
         } else {
-            vote.deadVotes++;
+            ++vote.deadVotes;
         }
 
         emit GraceVoteCast(user, msg.sender, voteAlive);
+    }
 
-        // Check for majority
-        uint256 councilSize = councils[user].length;
-        uint256 majority = (councilSize / 2) + 1;
+    /// @notice Vote on a user's status during grace period
+    /// @param user The user to vote on
+    /// @param voteAlive True to vote the user is alive, false to vote dead
+    function voteOnStatus(address user, bool voteAlive) external onlyRegistered(user) {
+        if (!councilMembers[user][msg.sender]) revert NotCouncilMember();
 
-        if (vote.aliveVotes >= majority) {
-            // Majority voted alive - reset check-in and mark as finalAlive
-            vote.decided = true;
-            vote.decisionAlive = true;
-            u.lastCheckIn = uint64(block.timestamp);
-            u.finalAlive = true;
-            emit StatusDecided(user, true);
-            emit Ping(user, u.lastCheckIn);
-        } else if (vote.deadVotes >= majority) {
-            // Majority voted dead - mark as deceased
-            vote.decided = true;
-            vote.decisionAlive = false;
-            u.deceased = true;
-            u.notifier = Notifier({notificationTime: uint64(block.timestamp), notifierAddress: msg.sender});
-            emit StatusDecided(user, false);
-            emit Deceased(user, uint64(block.timestamp), msg.sender);
+        User storage u = users[user];
+        GraceVote storage vote = graceVotes[user];
+        _recordGraceVote(user, u, vote, voteAlive);
+
+        uint256 majority = (councils[user].length / 2) + 1;
+        if (!(vote.aliveVotes < majority)) {
+            _applyAliveDecision(user, u, vote);
+        } else if (!(vote.deadVotes < majority)) {
+            _applyDeadDecision(user, u, vote);
         }
     }
 
@@ -883,9 +1154,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
         uint256 graceEnd = checkInEnd + uint256(u.gracePeriod);
 
-        if (block.timestamp <= checkInEnd) {
+        if (!(block.timestamp > checkInEnd)) {
             return (UserStatus.Alive, 0);
-        } else if (block.timestamp <= graceEnd) {
+        } else if (!(block.timestamp > graceEnd)) {
             uint64 remaining = uint64(graceEnd - block.timestamp);
             return (UserStatus.Grace, remaining);
         } else {
@@ -950,7 +1221,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     /// @notice Deposit ETH to fund delivery costs
     function deposit() external payable onlyRegistered(msg.sender) {
-        require(msg.value > 0, "must deposit something");
+        if (msg.value == 0) revert MustDepositSomething();
 
         User storage u = users[msg.sender];
         u.deposit += msg.value;
@@ -960,6 +1231,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     /// @notice Get user's deposit balance
     /// @param user The user address
+    /// @return The user's deposit balance in wei
     function getDeposit(address user) external view returns (uint256) {
         return users[user].deposit;
     }
@@ -967,9 +1239,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Calculate reward for a message
     /// @param user The user address
     /// @param messageIndex The message index
+    /// @return The calculated reward amount in wei
     function calculateReward(address user, uint256 messageIndex) public view returns (uint256) {
         User storage u = users[user];
-        require(messageIndex < u.messages.length, "invalid index");
+        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[messageIndex];
         uint256 payloadSizeKB = (m.payload.length + 1023) / 1024; // Round up to KB
@@ -984,29 +1257,34 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         return reward;
     }
 
+    /// @notice Check that all recipients in a message have been proven, revert if not
+    /// @param m Storage reference to the message
+    function _assertAllRecipientsProven(Message storage m) internal view {
+        uint256 numRecipients = m.recipientEmailHashes.length;
+        if (numRecipients > 0) {
+            uint256 requiredBitmap = (1 << numRecipients) - 1;
+            if (m.provenRecipientsBitmap != requiredBitmap) revert NotAllRecipientsProven();
+        }
+    }
+
     /// @notice Claim reward after ALL recipients have been proven via zk-email
     /// @param user The deceased user's address
     /// @param messageIndex The message index
     function claimReward(address user, uint256 messageIndex) external nonReentrant {
         User storage u = users[user];
-        require(u.deceased, "user not deceased");
-        require(messageIndex < u.messages.length, "invalid index");
+        if (!u.deceased) revert UserAlive();
+        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[messageIndex];
-        require(m.claimed, "message not claimed");
-        require(m.claimedBy == msg.sender, "not the claimer");
-        require(m.reward > 0, "no reward");
+        if (!m.claimed) revert MessageNotClaimed();
+        if (m.claimedBy != msg.sender) revert NotClaimant();
+        if (m.reward == 0) revert NoReward();
 
-        // Check all recipients have been proven
-        uint256 numRecipients = m.recipientEmailHashes.length;
-        if (numRecipients > 0) {
-            uint256 requiredBitmap = (1 << numRecipients) - 1;
-            require(m.provenRecipientsBitmap == requiredBitmap, "not all recipients proven");
-        }
+        _assertAllRecipientsProven(m);
 
         // Check if reward already claimed (prevent double claiming)
         bytes32 rewardKey = keccak256(abi.encode(user, messageIndex));
-        require(!rewardsClaimed[rewardKey], "already claimed");
+        if (rewardsClaimed[rewardKey]) revert AlreadyRewardClaimed();
         rewardsClaimed[rewardKey] = true;
 
         uint256 reward = m.reward;
@@ -1014,7 +1292,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         lockedRewards[user] -= reward;
 
         (bool success, ) = payable(msg.sender).call{value: reward}("");
-        require(success, "ETH transfer failed");
+        if (!success) revert EthTransferFailed();
 
         emit RewardClaimed(user, messageIndex, msg.sender, reward);
     }
@@ -1040,6 +1318,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Get message reward information
     /// @param user The user's address
     /// @param messageIndex The message index
+    /// @return reward The per-message ETH reward amount
+    /// @return numRecipients The number of recipients for proof verification
+    /// @return provenRecipientsBitmap Bitmap of which recipients have been proven
+    /// @return payloadContentHash Keccak256 hash of the decrypted payload content
     function getMessageRewardInfo(
         address user,
         uint256 messageIndex
@@ -1049,7 +1331,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         returns (uint256 reward, uint256 numRecipients, uint256 provenRecipientsBitmap, bytes32 payloadContentHash)
     {
         User storage u = users[user];
-        require(messageIndex < u.messages.length, "invalid index");
+        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[messageIndex];
         return (m.reward, m.recipientEmailHashes.length, m.provenRecipientsBitmap, m.payloadContentHash);
@@ -1059,16 +1341,17 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param user The user's address
     /// @param messageIndex The message index
     /// @param recipientIndex The recipient index
+    /// @return The Poseidon hash of the recipient email
     function getRecipientEmailHash(
         address user,
         uint256 messageIndex,
         uint256 recipientIndex
     ) external view returns (bytes32) {
         User storage u = users[user];
-        require(messageIndex < u.messages.length, "invalid index");
+        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[messageIndex];
-        require(recipientIndex < m.recipientEmailHashes.length, "invalid recipient");
+        if (!(recipientIndex < m.recipientEmailHashes.length)) revert InvalidIndex();
 
         return m.recipientEmailHashes[recipientIndex];
     }

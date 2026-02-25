@@ -2,6 +2,7 @@ import { DeployFunction } from "hardhat-deploy/types";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { ethers, upgrades, deployments, getNamedAccounts } = hre as any;
   const { deployer } = await getNamedAccounts();
 
