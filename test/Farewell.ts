@@ -111,7 +111,7 @@ describe("Farewell", function () {
     expect(isRegistered).to.eq(false);
 
     // Register
-    let tx = await FarewellContract.connect(signers.owner).register();
+    let tx = await FarewellContract.connect(signers.owner)["register()"]();
     await tx.wait();
 
     isRegistered = await FarewellContract.connect(signers.owner).isRegistered(signers.owner.address);
@@ -130,7 +130,7 @@ describe("Farewell", function () {
       const nLimbs = emailWords1.length;
       const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
       const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length, // emailByteLen
         skShareHandle, // encSkShare (externalEuint128)
@@ -155,7 +155,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
       const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes2.length, // emailByteLen
         skShareHandle, // encSkShare (externalEuint128)
@@ -190,7 +190,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
       const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length, // emailByteLen
         skShareHandle, // encSkShare (externalEuint128)
@@ -215,7 +215,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
       const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length, // emailByteLen
         skShareHandle, // encSkShare (externalEuint128)
@@ -298,7 +298,7 @@ describe("Farewell", function () {
   describe("setName", function () {
     it("should allow a registered user to set and update their name", async function () {
       // Register without name
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Name should be empty initially
@@ -344,7 +344,7 @@ describe("Farewell", function () {
   describe("revokeMessage", function () {
     it("should allow owner to remove their own unclaimed message", async function () {
       // Register
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add a message
@@ -357,7 +357,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length,
         skShareHandle,
@@ -385,7 +385,7 @@ describe("Farewell", function () {
 
     it("should not allow removing an already deleted message", async function () {
       // Register
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add a message
@@ -398,7 +398,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length,
         skShareHandle,
@@ -435,7 +435,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length,
         skShareHandle,
@@ -464,7 +464,7 @@ describe("Farewell", function () {
 
     it("should not allow non-owner to remove message", async function () {
       // Register
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add a message
@@ -477,7 +477,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length,
         skShareHandle,
@@ -495,7 +495,7 @@ describe("Farewell", function () {
 
     it("should preserve message indices after deletion", async function () {
       // Register
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add message 0
@@ -505,7 +505,7 @@ describe("Farewell", function () {
         enc.add128(skShare);
         const encrypted = await enc.encrypt();
         const nLimbs = emailWords1.length;
-        tx = await FarewellContract.connect(signers.owner).addMessage(
+        tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
           encrypted.handles.slice(0, nLimbs),
           emailBytes1.length,
           encrypted.handles[nLimbs],
@@ -522,7 +522,7 @@ describe("Farewell", function () {
         enc.add128(skShare);
         const encrypted = await enc.encrypt();
         const nLimbs = emailWords2.length;
-        tx = await FarewellContract.connect(signers.owner).addMessage(
+        tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
           encrypted.handles.slice(0, nLimbs),
           emailBytes2.length,
           encrypted.handles[nLimbs],
@@ -539,7 +539,7 @@ describe("Farewell", function () {
         enc.add128(skShare);
         const encrypted = await enc.encrypt();
         const nLimbs = emailWords1.length;
-        tx = await FarewellContract.connect(signers.owner).addMessage(
+        tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
           encrypted.handles.slice(0, nLimbs),
           emailBytes1.length,
           encrypted.handles[nLimbs],
@@ -615,7 +615,7 @@ describe("Farewell", function () {
       const limbsHandles = encrypted.handles.slice(0, nLimbs);
       const skShareHandle = encrypted.handles[nLimbs];
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length,
         skShareHandle,
@@ -638,7 +638,7 @@ describe("Farewell", function () {
     });
 
     it("should enforce email padding to 224 bytes (7 limbs)", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Create encrypted input with correct padding (7 limbs for 224 bytes)
@@ -654,7 +654,7 @@ describe("Farewell", function () {
       const skShareHandle = encrypted.handles[nLimbs];
 
       // This should work with padded email
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         limbsHandles,
         emailBytes1.length, // original length
         skShareHandle,
@@ -666,7 +666,7 @@ describe("Farewell", function () {
       // Try with wrong number of limbs (should fail)
       const wrongLimbs = limbsHandles.slice(0, 4); // Only 4 limbs instead of 7
       await expect(
-        FarewellContract.connect(signers.owner).addMessage(
+        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
           wrongLimbs,
           emailBytes1.length,
           skShareHandle,
@@ -677,7 +677,7 @@ describe("Farewell", function () {
     });
 
     it("should reject email longer than 224 bytes", async function () {
-      const tx = await FarewellContract.connect(signers.owner).register();
+      const tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Use valid encryption (7 limbs) but pass emailByteLen > MAX_EMAIL_BYTE_LEN
@@ -692,7 +692,7 @@ describe("Farewell", function () {
 
       // Should fail because emailByteLen (225) > MAX_EMAIL_BYTE_LEN (224)
       await expect(
-        FarewellContract.connect(signers.owner).addMessage(
+        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
           limbsHandles,
           225,
           skShareHandle,
@@ -705,7 +705,7 @@ describe("Farewell", function () {
 
   describe("Council System", function () {
     it("should allow adding council member without stake", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
@@ -717,7 +717,7 @@ describe("Farewell", function () {
     });
 
     it("should reject adding more than 20 council members", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add 20 members (the maximum) - use signers + random wallets
@@ -745,7 +745,7 @@ describe("Farewell", function () {
     });
 
     it("should allow removing council member", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add member
@@ -761,7 +761,7 @@ describe("Farewell", function () {
     });
 
     it("should track reverse index for council members", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       tx = await FarewellContract.connect(signers.alice)["register()"]();
@@ -957,7 +957,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -984,7 +984,7 @@ describe("Farewell", function () {
 
   describe("Message Editing", function () {
     it("should allow editing message before deceased", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add message
@@ -994,7 +994,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1040,7 +1040,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1087,7 +1087,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1125,7 +1125,7 @@ describe("Farewell", function () {
 
   describe("Deposits and Rewards", function () {
     it("should allow user to deposit ETH", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       const depositAmount = ethers.parseEther("1.0");
@@ -1137,7 +1137,7 @@ describe("Farewell", function () {
     });
 
     it("should calculate reward correctly", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Deposit
@@ -1152,7 +1152,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1233,7 +1233,7 @@ describe("Farewell", function () {
 
       // Claim reward (2-arg version)
       const balanceBefore = await ethers.provider.getBalance(signers.alice.address);
-      tx = await FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0);
+      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0);
       const receipt = await tx.wait();
       const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
       const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
@@ -1302,12 +1302,12 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Claim reward first time
-      tx = await FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0);
+      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0);
       await tx.wait();
 
       // Try to claim again (should fail - reward already zeroed out)
       await expect(
-        FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0),
+        FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0),
       ).to.be.revertedWithCustomError(FarewellContract, "NoReward");
     });
   });
@@ -1384,7 +1384,7 @@ describe("Farewell", function () {
 
       // Claim reward
       const balanceBefore = await ethers.provider.getBalance(signers.alice.address);
-      tx = await FarewellContract.connect(signers.alice)["claimReward(address,uint256)"](signers.owner.address, 0);
+      tx = await FarewellContract.connect(signers.alice).claimReward(signers.owner.address, 0);
       const receipt = await tx.wait();
       const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
       const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
@@ -1563,7 +1563,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1689,7 +1689,7 @@ describe("Farewell", function () {
     });
 
     it("M-1: should invalidate old message hash when editing", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add message
@@ -1699,7 +1699,7 @@ describe("Farewell", function () {
       const encrypted = await enc.encrypt();
       const nLimbs = emailWords1.length;
 
-      tx = await FarewellContract.connect(signers.owner).addMessage(
+      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
         encrypted.handles.slice(0, nLimbs),
         emailBytes1.length,
         encrypted.handles[nLimbs],
@@ -1740,7 +1740,7 @@ describe("Farewell", function () {
     });
 
     it("M-2: should allow clearing public message via edit", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add message with public message
@@ -1819,7 +1819,7 @@ describe("Farewell", function () {
     });
 
     it("M-6: should refund reward ETH when revoking a reward-bearing message", async function () {
-      let tx = await FarewellContract.connect(signers.owner).register();
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       // Add message with reward
@@ -1854,7 +1854,7 @@ describe("Farewell", function () {
       const balanceBefore = await ethers.provider.getBalance(signers.owner.address);
       tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
       const receipt = await tx.wait();
-      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const gasUsed = receipt!.gasUsed * BigInt(receipt!.gasPrice);
       const balanceAfter = await ethers.provider.getBalance(signers.owner.address);
 
       // Check that reward was refunded (minus gas)
@@ -1866,7 +1866,7 @@ describe("Farewell", function () {
     });
 
     it("I-4: should reject addMessageWithReward with zero reward", async function () {
-      const tx = await FarewellContract.connect(signers.owner).register();
+      const tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);

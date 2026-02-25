@@ -55,11 +55,11 @@ async function upgradeContract(proxyAddress: string) {
   // Verify functions exist
   const contract = await ethers.getContractAt("Farewell", proxyAddress);
   const hasSetName = typeof contract.setName === "function";
-  const hasRemoveMessage = typeof contract.removeMessage === "function";
+  const hasRevokeMessage = typeof contract.revokeMessage === "function";
   const hasComputeMessageHash = typeof contract.computeMessageHash === "function";
   const hasMessageHashes = typeof contract.messageHashes === "function";
   console.log("setName available:", hasSetName);
-  console.log("removeMessage available:", hasRemoveMessage);
+  console.log("revokeMessage available:", hasRevokeMessage);
   console.log("computeMessageHash available:", hasComputeMessageHash);
   console.log("messageHashes mapping available:", hasMessageHashes);
 
