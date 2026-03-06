@@ -1893,4 +1893,126 @@ describe("Farewell", function () {
       ).to.be.revertedWithCustomError(FarewellContract, "MustIncludeReward");
     });
   });
+
+  describe("discoverability", function () {
+    it("user should NOT be discoverable by default after registration", async function () {
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+      const count = await FarewellContract.getDiscoverableCount();
+      expect(count).to.eq(0);
+    });
+
+    it("registered user can opt into discoverability", async function () {
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+
+      const tx = await FarewellContract.connect(signers.owner).setDiscoverable(true);
+      await expect(tx).to.emit(FarewellContract, "DiscoverabilityChanged").withArgs(signers.owner.address, true);
+
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(1);
+      const users = await FarewellContract.getDiscoverableUsers(0, 10);
+      expect(users).to.deep.eq([signers.owner.address]);
+    });
+
+    it("registered user can opt out of discoverability", async function () {
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(true)).wait();
+
+      const tx = await FarewellContract.connect(signers.owner).setDiscoverable(false);
+      await expect(tx).to.emit(FarewellContract, "DiscoverabilityChanged").withArgs(signers.owner.address, false);
+
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(0);
+      const users = await FarewellContract.getDiscoverableUsers(0, 10);
+      expect(users).to.deep.eq([]);
+    });
+
+    it("swap-and-pop removal works correctly with multiple users", async function () {
+      // Register three users
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.alice)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.bob)["register()"]()).wait();
+
+      // All opt in
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(true)).wait();
+      await (await FarewellContract.connect(signers.alice).setDiscoverable(true)).wait();
+      await (await FarewellContract.connect(signers.bob).setDiscoverable(true)).wait();
+
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(3);
+
+      // Remove the first one (triggers swap-and-pop: bob moves to index 0)
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(false)).wait();
+
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(2);
+      const users = await FarewellContract.getDiscoverableUsers(0, 10);
+      expect(users).to.include(signers.alice.address);
+      expect(users).to.include(signers.bob.address);
+      expect(users).to.not.include(signers.owner.address);
+    });
+
+    it("non-registered user cannot call setDiscoverable", async function () {
+      await expect(FarewellContract.connect(signers.owner).setDiscoverable(true)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "NotRegistered",
+      );
+    });
+
+    it("cannot opt in twice", async function () {
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(true)).wait();
+
+      await expect(FarewellContract.connect(signers.owner).setDiscoverable(true)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "AlreadyDiscoverable",
+      );
+    });
+
+    it("cannot opt out when not discoverable", async function () {
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+
+      await expect(FarewellContract.connect(signers.owner).setDiscoverable(false)).to.be.revertedWithCustomError(
+        FarewellContract,
+        "NotDiscoverable",
+      );
+    });
+
+    it("pagination works correctly", async function () {
+      // Register and opt in three users
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.alice)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.bob)["register()"]()).wait();
+
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(true)).wait();
+      await (await FarewellContract.connect(signers.alice).setDiscoverable(true)).wait();
+      await (await FarewellContract.connect(signers.bob).setDiscoverable(true)).wait();
+
+      // Get first 2
+      const page1 = await FarewellContract.getDiscoverableUsers(0, 2);
+      expect(page1.length).to.eq(2);
+
+      // Get remaining
+      const page2 = await FarewellContract.getDiscoverableUsers(2, 2);
+      expect(page2.length).to.eq(1);
+
+      // Out of range offset returns empty
+      const page3 = await FarewellContract.getDiscoverableUsers(10, 5);
+      expect(page3.length).to.eq(0);
+    });
+
+    it("getDiscoverableCount reflects additions and removals", async function () {
+      await (await FarewellContract.connect(signers.owner)["register()"]()).wait();
+      await (await FarewellContract.connect(signers.alice)["register()"]()).wait();
+
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(0);
+
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(true)).wait();
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(1);
+
+      await (await FarewellContract.connect(signers.alice).setDiscoverable(true)).wait();
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(2);
+
+      await (await FarewellContract.connect(signers.owner).setDiscoverable(false)).wait();
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(1);
+
+      await (await FarewellContract.connect(signers.alice).setDiscoverable(false)).wait();
+      expect(await FarewellContract.getDiscoverableCount()).to.eq(0);
+    });
+  });
 });

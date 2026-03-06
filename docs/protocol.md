@@ -911,7 +911,47 @@ The claim package and proof system support multiple recipients via the `recipien
 
 ---
 
-## 15. Gas Optimization Notes
+## 15. Discoverability
+
+### 15.1 Problem
+
+Claimers need to find deceased users on-chain to deliver their messages. Without an enumerable list, there is no way to
+discover user addresses — only individual lookups by known address exist. Events (`Deceased`, `UserRegistered`) work
+off-chain but require indexers or archive nodes. Additionally, `markDeceased(user)` requires knowing the address, but
+there is no on-chain way to discover addresses.
+
+### 15.2 Solution
+
+An opt-in discoverable list of all registered users. Users are **not** listed by default — they must explicitly opt in
+by calling `setDiscoverable(true)`, accepting that their address is publicly visible as a Farewell user.
+
+### 15.3 Claimer Workflow
+
+1. Call `getDiscoverableCount()` to get total number of discoverable users
+2. Paginate through `getDiscoverableUsers(offset, limit)`
+3. For each address, call `getUserState(addr)` to check status
+4. If status indicates timeout: call `markDeceased(addr)`, then `claim(addr, index)`
+
+### 15.4 Privacy Implications
+
+Opting into discoverability reveals:
+
+- The user's wallet address is a Farewell user
+- Their liveness status (via `getUserState()`)
+
+It does **not** reveal message contents, recipient emails, or any encrypted data.
+
+### 15.5 Implementation
+
+- `discoverableUsers`: Dynamic array of opted-in addresses
+- `discoverableIndex`: 1-indexed mapping for O(1) lookup and swap-and-pop removal
+- Opt-out uses swap-and-pop to avoid gaps in the array
+
+For API details, see [docs/contract-api.md](contract-api.md#discoverability).
+
+---
+
+## 16. Gas Optimization Notes
 
 The contract implements several gas optimizations:
 
@@ -923,7 +963,7 @@ The contract implements several gas optimizations:
 
 ---
 
-## 16. Deployment Checklist
+## 17. Deployment Checklist
 
 Before deploying Farewell to a new network:
 

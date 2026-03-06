@@ -22,7 +22,8 @@ farewell-core/
 │   ├── protocol.md           # Full protocol specification (lifecycle, encryption, FHE, council, rewards)
 │   ├── contract-api.md       # Complete API reference (functions, events, errors, constants)
 │   ├── building-a-client.md  # Guide with TypeScript examples for building alternative clients
-│   └── proof-structure.md    # Delivery proof architecture & zk-email verification spec
+│   ├── proof-structure.md    # Delivery proof architecture & zk-email verification spec
+│   └── discoverability.md   # Opt-in discoverable users list for claimers
 ├── test/                      # Hardhat tests
 ├── hardhat.config.ts          # Hardhat configuration
 ├── package.json
@@ -158,6 +159,7 @@ event DeliveryProven(address indexed user, uint256 indexed messageIndex, uint256
 event RewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, uint256 amount);
 event ZkEmailVerifierSet(address verifier);
 event DkimKeyUpdated(bytes32 domain, uint256 pubkeyHash, bool trusted);
+event DiscoverabilityChanged(address indexed user, bool discoverable);
 ```
 
 ## FHE Integration
@@ -222,6 +224,7 @@ npx hardhat verify --network sepolia <address>
 | [docs/contract-api.md](docs/contract-api.md)           | Complete API reference — every function, event, struct, constant, and error             |
 | [docs/building-a-client.md](docs/building-a-client.md) | Guide with TypeScript examples for building alternative clients                         |
 | [docs/proof-structure.md](docs/proof-structure.md)     | Delivery proof architecture — zk-email format, Groth16 verification, data structures    |
+| [docs/discoverability.md](docs/discoverability.md)     | Opt-in discoverable users list — claimer workflow, privacy considerations                |
 
 ## Related Projects
 
