@@ -156,6 +156,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error MessageNotClaimed();
     error AlreadyDiscoverable();
     error NotDiscoverable();
+    error InsufficientDeposit();
+    error CouncilFrozenDuringGrace();
+    error PublicMessageTooLong();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;
@@ -187,7 +190,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Enumerable list of users who opted into discoverability
     address[] internal discoverableUsers;
     /// @notice 1-indexed position in discoverableUsers (0 = not in list)
-    mapping(address => uint256) internal discoverableIndex;
+    mapping(address user => uint256 position) internal discoverableIndex;
 
     // Storage gap for upgradeability safety
     uint256[48] private __gap;
@@ -310,7 +313,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Emitted when a user changes their discoverability setting
     /// @param user The user's address
     /// @param discoverable Whether the user is now discoverable
-    event DiscoverabilityChanged(address indexed user, bool discoverable);
+    event DiscoverabilityChanged(address indexed user, bool indexed discoverable);
 
     /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {
@@ -366,6 +369,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     uint256 internal constant BASE_REWARD = 0.01 ether; // Base reward per message
     uint256 internal constant REWARD_PER_KB = 0.005 ether; // Additional reward per KB of payload
 
+    // --- Public message constants ---
+    uint32 internal constant MAX_PUBLIC_MESSAGE_BYTE_LEN = 1024; // 1KB
+
     // --- Council constants ---
     uint256 internal constant MAX_COUNCIL_SIZE = 20;
 
@@ -383,8 +389,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         if (u.lastCheckIn != 0) {
             // user is already registered, update configs
             if (u.deceased) revert UserDeceased();
-            uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
-            if (!(block.timestamp < checkInEnd + 1)) revert CheckInExpired();
+            uint256 graceEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
+            if (!(block.timestamp < graceEnd + 1)) revert CheckInExpired();
             u.name = name;
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
@@ -455,6 +461,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     function setName(string calldata newName) external {
         User storage u = users[msg.sender];
         if (u.lastCheckIn == 0) revert NotRegistered();
+        if (u.deceased) revert UserDeceased();
         if (!(bytes(newName).length < 101)) revert NameTooLong();
         u.name = newName;
         emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
@@ -509,6 +516,13 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         if (u.finalAlive) {
             u.finalAlive = false;
             _resetGraceVote(msg.sender);
+        } else {
+            // Reset any stale grace votes from a previous cycle
+            // (e.g., user entered grace, votes were cast, then user pinged before grace ended)
+            uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+            if (block.timestamp > checkInEnd) {
+                _resetGraceVote(msg.sender);
+            }
         }
 
         u.lastCheckIn = uint64(block.timestamp);
@@ -577,6 +591,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         string memory publicMessage
     ) internal onlyRegistered(msg.sender) returns (uint256 index) {
         _validateMessageInput(emailByteLen, limbs, payload);
+        if (!(bytes(publicMessage).length < MAX_PUBLIC_MESSAGE_BYTE_LEN + 1)) revert PublicMessageTooLong();
 
         User storage u = users[msg.sender];
         if (u.deceased) revert UserDeceased();
@@ -660,22 +675,37 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bytes32[] calldata recipientEmailHashes,
         bytes32 payloadContentHash
     ) external payable returns (uint256 index) {
-        if (msg.value == 0) revert MustIncludeReward();
         if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
         if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
 
+        User storage u = users[msg.sender];
+
+        // Add any sent ETH to user's deposit pool
+        if (msg.value > 0) {
+            u.deposit += msg.value;
+            emit DepositAdded(msg.sender, msg.value);
+        }
+
         index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
 
+        // Calculate reward: BASE_REWARD + REWARD_PER_KB * payloadSizeKB, capped at deposit
+        uint256 payloadSizeKB = (payload.length + 1023) / 1024;
+        uint256 rewardAmount = BASE_REWARD + (payloadSizeKB * REWARD_PER_KB);
+        if (rewardAmount > u.deposit) {
+            rewardAmount = u.deposit;
+        }
+        if (rewardAmount == 0) revert MustIncludeReward();
+
         // Store reward and verification data
-        User storage u = users[msg.sender];
         Message storage m = u.messages[index];
-        m.reward = msg.value;
+        m.reward = rewardAmount;
         m.recipientEmailHashes = recipientEmailHashes;
         m.payloadContentHash = payloadContentHash;
         m.provenRecipientsBitmap = 0;
 
-        // Track locked rewards
-        lockedRewards[msg.sender] += msg.value;
+        // Deduct from deposit and track locked rewards
+        u.deposit -= rewardAmount;
+        lockedRewards[msg.sender] += rewardAmount;
     }
 
     /// @notice Get the number of messages for a user
@@ -698,13 +728,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
         m.revoked = true;
 
-        // Refund reward if one was attached
+        // Return reward to user's deposit pool if one was attached
         if (m.reward > 0) {
             uint256 refund = m.reward;
             m.reward = 0;
             lockedRewards[msg.sender] -= refund;
-            (bool success, ) = payable(msg.sender).call{value: refund}("");
-            if (!success) revert EthTransferFailed();
+            users[msg.sender].deposit += refund;
         }
 
         emit MessageRevoked(msg.sender, index);
@@ -745,6 +774,18 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         // Update payload and public message
         m.payload = payload;
         m.publicMessage = publicMessage;
+
+        // Reset reward/proof fields if message had a reward attached
+        // (proof commitments no longer match the new content)
+        if (m.reward > 0) {
+            uint256 refund = m.reward;
+            m.reward = 0;
+            lockedRewards[msg.sender] -= refund;
+            users[msg.sender].deposit += refund;
+            delete m.recipientEmailHashes;
+            m.payloadContentHash = bytes32(0);
+            m.provenRecipientsBitmap = 0;
+        }
 
         // Invalidate old hash and recompute
         messageHashes[m.hash] = false;
@@ -808,7 +849,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     ///      This may be intended behavior, but should be considered when designing the protocol.
     /// @param user The deceased user's address
     /// @param index The message index to claim
-    function claim(address user, uint256 index) external {
+    function claim(address user, uint256 index) external nonReentrant {
         User storage u = users[user];
         if (!u.deceased) revert NotDeliverable();
         if (!(index < u.messages.length)) revert InvalidIndex();
@@ -860,6 +901,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     ) external {
         User storage u = users[user];
         if (!u.deceased) revert UserAlive();
+        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[messageIndex];
         if (!m.claimed) revert MessageNotClaimed();
@@ -974,9 +1016,19 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     // --- Council functions ---
 
+    /// @notice Check if a user is currently in their grace period
+    /// @param u Storage reference to the user
+    /// @return True if the user is in grace period
+    function _isInGracePeriod(User storage u) internal view returns (bool) {
+        uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+        uint256 graceEnd = checkInEnd + uint256(u.gracePeriod);
+        return block.timestamp > checkInEnd && !(block.timestamp > graceEnd);
+    }
+
     /// @notice Add a council member (no stake required, max 20 members)
     /// @param member The address to add as council member
     function addCouncilMember(address member) external onlyRegistered(msg.sender) {
+        if (_isInGracePeriod(users[msg.sender])) revert CouncilFrozenDuringGrace();
         if (member == address(0)) revert InvalidMember();
         if (member == msg.sender) revert CannotAddSelf();
 
@@ -996,6 +1048,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param member The address to remove from council
     function removeCouncilMember(address member) external {
         if (!councilMembers[msg.sender][member]) revert NotCouncilMember();
+        if (users[msg.sender].lastCheckIn != 0 && _isInGracePeriod(users[msg.sender]))
+            revert CouncilFrozenDuringGrace();
 
         CouncilMember[] storage council = councils[msg.sender];
         uint256 length = council.length;
@@ -1242,6 +1296,16 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         emit DepositAdded(msg.sender, msg.value);
     }
 
+    /// @notice Withdraw unlocked ETH from deposit balance
+    /// @param amount The amount to withdraw in wei
+    function withdrawDeposit(uint256 amount) external nonReentrant onlyRegistered(msg.sender) {
+        User storage u = users[msg.sender];
+        if (amount > u.deposit) revert InsufficientDeposit();
+        u.deposit -= amount;
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        if (!success) revert EthTransferFailed();
+    }
+
     /// @notice Get user's deposit balance
     /// @param user The user address
     /// @return The user's deposit balance in wei
@@ -1370,6 +1434,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     }
 
     // --- Discoverability ---
+    // Implements the opt-in discoverable users list described in docs/discoverability.md.
+    // Deceased users intentionally remain in the list so claimers can find and process them.
 
     /// @notice Toggle discoverability for the calling user
     /// @param _discoverable Whether the user should be discoverable
@@ -1401,7 +1467,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @return result Array of discoverable user addresses
     function getDiscoverableUsers(uint256 offset, uint256 limit) external view returns (address[] memory result) {
         uint256 total = discoverableUsers.length;
-        if (offset >= total) {
+        if (!(offset < total)) {
             return new address[](0);
         }
         uint256 end = offset + limit;

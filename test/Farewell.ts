@@ -1268,8 +1268,10 @@ describe("Farewell", function () {
       const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
       const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
 
-      // Check reward was transferred (accounting for gas)
-      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
+      // Reward is auto-calculated: BASE_REWARD (0.01) + ceil(payload/1024)*REWARD_PER_KB (0.005)
+      // payload1 = "hello" = 5 bytes → ceil(5/1024) = 1 KB → reward = 0.01 + 0.005 = 0.015 ETH
+      const expectedReward = ethers.parseEther("0.015");
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(expectedReward);
     });
 
     it("should prevent double claiming of reward", async function () {
@@ -1419,8 +1421,9 @@ describe("Farewell", function () {
       const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
       const balanceAfter = await ethers.provider.getBalance(signers.alice.address);
 
-      // Verify reward was received
-      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
+      // Reward is auto-calculated: BASE_REWARD (0.01) + ceil(payload/1024)*REWARD_PER_KB (0.005)
+      const expectedReward = ethers.parseEther("0.015");
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(expectedReward);
     });
 
     it("should complete council voting flow: add members → enter grace → vote alive → user saved", async function () {
@@ -1669,10 +1672,10 @@ describe("Farewell", function () {
       expect(status).to.eq(2); // Deceased
     });
 
-    it("H-4: should prevent re-registration during grace period", async function () {
+    it("H-4: should allow re-registration during grace period but prevent past grace", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
-      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
         "Original",
         checkInPeriod,
         gracePeriod,
@@ -1683,10 +1686,25 @@ describe("Farewell", function () {
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
       await ethers.provider.send("evm_mine", []);
 
-      // Try to re-register (should fail - check-in period expired)
+      // Re-registration during grace period should succeed (consistent with ping())
+      tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Updated",
+        checkInPeriod,
+        gracePeriod,
+      );
+      await tx.wait();
+
+      const name = await FarewellContract.getUserName(signers.owner.address);
+      expect(name).to.eq("Updated");
+
+      // Advance past both check-in and grace
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Re-registration past grace should fail
       await expect(
         FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-          "Updated",
+          "TooLate",
           checkInPeriod,
           gracePeriod,
         ),
@@ -1814,41 +1832,33 @@ describe("Farewell", function () {
       expect(msg.publicMessage).to.eq("");
     });
 
-    it("M-5: should clear stale vote when removing council member during active vote", async function () {
+    it("M-5: should freeze council membership during grace period", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      // Add 3 council members
+      // Add council members before grace
       const allSigners = await ethers.getSigners();
-      for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
-      }
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[1].address);
+      await tx.wait();
 
       // Advance to grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
       await ethers.provider.send("evm_mine", []);
 
-      // Member 1 votes alive
-      tx = await FarewellContract.connect(allSigners[1]).voteOnStatus(signers.owner.address, true);
-      await tx.wait();
+      // Cannot add council members during grace
+      await expect(
+        FarewellContract.connect(signers.owner).addCouncilMember(allSigners[2].address),
+      ).to.be.revertedWithCustomError(FarewellContract, "CouncilFrozenDuringGrace");
 
-      let [aliveVotes] = await FarewellContract.getGraceVoteStatus(signers.owner.address);
-      expect(aliveVotes).to.eq(1);
-
-      // Owner removes member 1 (who voted alive) - ping first to re-enter alive status
-      // Actually owner can't ping because they're in grace. They need to remove member directly.
-      tx = await FarewellContract.connect(signers.owner).removeCouncilMember(allSigners[1].address);
-      await tx.wait();
-
-      // Vote count should be decremented
-      [aliveVotes] = await FarewellContract.getGraceVoteStatus(signers.owner.address);
-      expect(aliveVotes).to.eq(0);
+      // Cannot remove council members during grace
+      await expect(
+        FarewellContract.connect(signers.owner).removeCouncilMember(allSigners[1].address),
+      ).to.be.revertedWithCustomError(FarewellContract, "CouncilFrozenDuringGrace");
     });
 
-    it("M-6: should refund reward ETH when revoking a reward-bearing message", async function () {
+    it("M-6: should return reward to deposit when revoking a reward-bearing message", async function () {
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
@@ -1861,7 +1871,7 @@ describe("Farewell", function () {
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
-      const rewardAmount = ethers.parseEther("0.5");
+      const depositAmount = ethers.parseEther("0.5");
 
       tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
         encrypted.handles.slice(0, nLimbs),
@@ -1872,27 +1882,31 @@ describe("Farewell", function () {
         "",
         [recipientEmailHash],
         payloadContentHash,
-        { value: rewardAmount },
+        { value: depositAmount },
       );
       await tx.wait();
 
-      // Check locked rewards
+      // Auto-calculated reward: BASE_REWARD (0.01) + ceil(5/1024)*REWARD_PER_KB (0.005) = 0.015 ETH
+      const expectedReward = ethers.parseEther("0.015");
+      const expectedRemainingDeposit = depositAmount - expectedReward;
+
+      // Check locked rewards and deposit
       const lockedBefore = await FarewellContract.lockedRewards(signers.owner.address);
-      expect(lockedBefore).to.eq(rewardAmount);
+      expect(lockedBefore).to.eq(expectedReward);
+      const depositBefore = await FarewellContract.getDeposit(signers.owner.address);
+      expect(depositBefore).to.eq(expectedRemainingDeposit);
 
-      // Revoke message - should refund reward
-      const balanceBefore = await ethers.provider.getBalance(signers.owner.address);
+      // Revoke message - reward should return to deposit (not direct ETH refund)
       tx = await FarewellContract.connect(signers.owner).revokeMessage(0);
-      const receipt = await tx.wait();
-      const gasUsed = receipt!.gasUsed * BigInt(receipt!.gasPrice);
-      const balanceAfter = await ethers.provider.getBalance(signers.owner.address);
-
-      // Check that reward was refunded (minus gas)
-      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
+      await tx.wait();
 
       // Locked rewards should be zero
       const lockedAfter = await FarewellContract.lockedRewards(signers.owner.address);
       expect(lockedAfter).to.eq(0);
+
+      // Deposit should have the reward returned
+      const depositAfter = await FarewellContract.getDeposit(signers.owner.address);
+      expect(depositAfter).to.eq(expectedRemainingDeposit + expectedReward);
     });
 
     it("I-4: should reject addMessageWithReward with zero reward", async function () {
@@ -1921,6 +1935,272 @@ describe("Farewell", function () {
           { value: 0 },
         ),
       ).to.be.revertedWithCustomError(FarewellContract, "MustIncludeReward");
+    });
+  });
+
+  describe("New Security Fixes", function () {
+    it("should prevent deceased users from adding messages", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Advance time and mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Try to add message as deceased user
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      await expect(
+        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes)"](
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes1.length,
+          encrypted.handles[nLimbs],
+          payloadBytes1,
+          encrypted.inputProof,
+        ),
+      ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
+    });
+
+    it("should prevent deceased users from changing name", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
+        "Original",
+        checkInPeriod,
+        gracePeriod,
+      );
+      await tx.wait();
+
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      await expect(FarewellContract.connect(signers.owner).setName("Changed")).to.be.revertedWithCustomError(
+        FarewellContract,
+        "UserDeceased",
+      );
+    });
+
+    it("should reset grace votes when user pings during grace period", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add council member before grace
+      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
+      await tx.wait();
+
+      // Enter grace period
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Alice votes
+      tx = await FarewellContract.connect(signers.alice).voteOnStatus(signers.owner.address, true);
+      await tx.wait();
+      let [aliveVotes] = await FarewellContract.getGraceVoteStatus(signers.owner.address);
+      expect(aliveVotes).to.eq(1);
+
+      // Owner pings (still in grace, resets timer)
+      tx = await FarewellContract.connect(signers.owner).ping();
+      await tx.wait();
+
+      // Grace votes should be reset
+      [aliveVotes] = await FarewellContract.getGraceVoteStatus(signers.owner.address);
+      expect(aliveVotes).to.eq(0);
+    });
+
+    it("should reject publicMessage longer than 1024 bytes", async function () {
+      const tx = await FarewellContract.connect(signers.owner)["register()"]();
+      await tx.wait();
+
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      const longPublicMessage = "x".repeat(1025);
+
+      await expect(
+        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string)"](
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes1.length,
+          encrypted.handles[nLimbs],
+          payloadBytes1,
+          encrypted.inputProof,
+          longPublicMessage,
+        ),
+      ).to.be.revertedWithCustomError(FarewellContract, "PublicMessageTooLong");
+    });
+
+    it("should allow addMessageWithReward from pre-deposited funds", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
+      await tx.wait();
+
+      // Pre-deposit ETH
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: ethers.parseEther("1.0") });
+      await tx.wait();
+
+      const depositBefore = await FarewellContract.getDeposit(signers.owner.address);
+      expect(depositBefore).to.eq(ethers.parseEther("1.0"));
+
+      // Add message with reward using deposit (no msg.value)
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: 0 },
+      );
+      await tx.wait();
+
+      // Deposit should be reduced by auto-calculated reward
+      const expectedReward = ethers.parseEther("0.015"); // BASE_REWARD + 1KB * REWARD_PER_KB
+      const depositAfter = await FarewellContract.getDeposit(signers.owner.address);
+      expect(depositAfter).to.eq(ethers.parseEther("1.0") - expectedReward);
+
+      // Locked rewards should match
+      const locked = await FarewellContract.lockedRewards(signers.owner.address);
+      expect(locked).to.eq(expectedReward);
+    });
+
+    it("should allow withdrawing deposit balance", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
+      await tx.wait();
+
+      // Deposit ETH
+      tx = await FarewellContract.connect(signers.owner).deposit({ value: ethers.parseEther("1.0") });
+      await tx.wait();
+
+      // Withdraw half
+      const balanceBefore = await ethers.provider.getBalance(signers.owner.address);
+      tx = await FarewellContract.connect(signers.owner).withdrawDeposit(ethers.parseEther("0.5"));
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const balanceAfter = await ethers.provider.getBalance(signers.owner.address);
+
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(ethers.parseEther("0.5"));
+
+      // Deposit should be reduced
+      const depositAfter = await FarewellContract.getDeposit(signers.owner.address);
+      expect(depositAfter).to.eq(ethers.parseEther("0.5"));
+    });
+
+    it("should revert withdrawDeposit with insufficient balance", async function () {
+      const tx = await FarewellContract.connect(signers.owner)["register()"]();
+      await tx.wait();
+
+      await expect(
+        FarewellContract.connect(signers.owner).withdrawDeposit(ethers.parseEther("1.0")),
+      ).to.be.revertedWithCustomError(FarewellContract, "InsufficientDeposit");
+    });
+
+    it("should reset reward fields when editing a message with reward", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
+      await tx.wait();
+
+      // Add message with reward
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
+      const payloadContentHash = ethers.keccak256(payloadBytes1);
+
+      tx = await FarewellContract.connect(signers.owner).addMessageWithReward(
+        encrypted.handles.slice(0, nLimbs),
+        emailBytes1.length,
+        encrypted.handles[nLimbs],
+        payloadBytes1,
+        encrypted.inputProof,
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        { value: ethers.parseEther("0.5") },
+      );
+      await tx.wait();
+
+      // Check reward info before edit
+      let rewardInfo = await FarewellContract.getMessageRewardInfo(signers.owner.address, 0);
+      expect(rewardInfo.reward).to.be.gt(0);
+      expect(rewardInfo.numRecipients).to.eq(1);
+
+      // Edit the message
+      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords2) enc2.add256(w);
+      enc2.add128(skShare);
+      const encrypted2 = await enc2.encrypt();
+
+      tx = await FarewellContract.connect(signers.owner).editMessage(
+        0,
+        encrypted2.handles.slice(0, nLimbs),
+        emailBytes2.length,
+        encrypted2.handles[nLimbs],
+        payloadBytes2,
+        encrypted2.inputProof,
+        "edited",
+      );
+      await tx.wait();
+
+      // Reward fields should be reset
+      rewardInfo = await FarewellContract.getMessageRewardInfo(signers.owner.address, 0);
+      expect(rewardInfo.reward).to.eq(0);
+      expect(rewardInfo.numRecipients).to.eq(0);
+
+      // Locked rewards should be zero
+      const locked = await FarewellContract.lockedRewards(signers.owner.address);
+      expect(locked).to.eq(0);
+    });
+
+    it("should give clear error for proveDelivery with invalid message index", async function () {
+      const checkInPeriod = 86400;
+      const gracePeriod = 86400;
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      const zkProof = {
+        pA: [0n, 0n] as [bigint, bigint],
+        pB: [
+          [0n, 0n],
+          [0n, 0n],
+        ] as [[bigint, bigint], [bigint, bigint]],
+        pC: [0n, 0n] as [bigint, bigint],
+        publicSignals: [0n, 0n, 0n],
+      };
+
+      await expect(
+        FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 999, 0, zkProof),
+      ).to.be.revertedWithCustomError(FarewellContract, "InvalidIndex");
     });
   });
 
