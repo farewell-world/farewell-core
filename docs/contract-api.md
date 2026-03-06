@@ -1441,6 +1441,79 @@ Set a DKIM public key hash as trusted or untrusted (owner only).
 
 ---
 
+## Discoverability
+
+### setDiscoverable()
+
+```solidity
+function setDiscoverable(bool _discoverable) external
+```
+
+Toggle whether the calling user appears in the on-chain discoverable users list. Users are **not** discoverable by
+default — they must explicitly opt in.
+
+**Access**: Registered users only
+
+**Parameters**: | Name | Type | Description | |------|------|-------------| | `_discoverable` | `bool` | `true` to opt
+in, `false` to opt out |
+
+**Returns**: None
+
+**Reverts**:
+
+- `NotRegistered()` — Caller is not registered
+- `AlreadyDiscoverable()` — Caller is already in the list (when opting in)
+- `NotDiscoverable()` — Caller is not in the list (when opting out)
+
+**Emits**:
+
+- `DiscoverabilityChanged(msg.sender, _discoverable)`
+
+**Notes**:
+
+- Opt-out uses swap-and-pop removal for gas efficiency.
+- Opting in makes the user's address publicly enumerable — this reveals them as a Farewell user.
+
+---
+
+### getDiscoverableUsers()
+
+```solidity
+function getDiscoverableUsers(uint256 offset, uint256 limit) external view returns (address[] memory)
+```
+
+Returns a paginated slice of the discoverable users list.
+
+**Access**: Anyone (view function)
+
+**Parameters**: | Name | Type | Description | |------|------|-------------| | `offset` | `uint256` | Starting index |
+| `limit` | `uint256` | Maximum number of addresses to return |
+
+**Returns**: `address[]` — Array of discoverable user addresses (up to `limit` entries)
+
+**Reverts**: Never (returns empty array if offset is out of range)
+
+**Notes**:
+
+- Use with `getDiscoverableCount()` to implement pagination.
+- Array order may change when users opt out (swap-and-pop).
+
+---
+
+### getDiscoverableCount()
+
+```solidity
+function getDiscoverableCount() external view returns (uint256)
+```
+
+Returns the total number of discoverable users.
+
+**Access**: Anyone (view function)
+
+**Returns**: `uint256` — Total count of users who opted into discoverability
+
+---
+
 ## Events
 
 All events listed with their parameters and descriptions.
@@ -1711,6 +1784,21 @@ Emitted when a DKIM key trust status is updated via `setTrustedDkimKey()`.
 
 ---
 
+### DiscoverabilityChanged
+
+```solidity
+event DiscoverabilityChanged(address indexed user, bool discoverable)
+```
+
+Emitted when a user changes their discoverability setting via `setDiscoverable()`.
+
+| Indexed | Name           | Type      | Description                             |
+| ------- | -------------- | --------- | --------------------------------------- |
+| Yes     | `user`         | `address` | The user who changed discoverability    |
+| No      | `discoverable` | `bool`    | `true` if opted in, `false` if opted out |
+
+---
+
 ## Error Reference
 
 Complete table of all error strings and their causes.
@@ -1771,6 +1859,8 @@ Complete table of all error strings and their causes.
 | `"grace period ended"`               | `voteOnStatus()`                                 | After grace period expires                    |
 | `"vote already decided"`             | `voteOnStatus()`                                 | Majority already reached                      |
 | `"already voted"`                    | `voteOnStatus()`                                 | Member already voted                          |
+| `"already discoverable"`             | `setDiscoverable(true)`                          | User already in discoverable list             |
+| `"not discoverable"`                 | `setDiscoverable(false)`                         | User not in discoverable list                 |
 
 ---
 

@@ -154,6 +154,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error UserVotedAlive();
     error NotTimedOut();
     error MessageNotClaimed();
+    error AlreadyDiscoverable();
+    error NotDiscoverable();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;
@@ -182,8 +184,13 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     uint64 private totalUsers;
     uint64 private totalMessages;
 
+    /// @notice Enumerable list of users who opted into discoverability
+    address[] internal discoverableUsers;
+    /// @notice 1-indexed position in discoverableUsers (0 = not in list)
+    mapping(address => uint256) internal discoverableIndex;
+
     // Storage gap for upgradeability safety
-    uint256[50] private __gap;
+    uint256[48] private __gap;
 
     // -----------------------
     // Events
@@ -299,6 +306,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param pubkeyHash The DKIM public key hash
     /// @param trusted Whether the key is now trusted
     event DkimKeyUpdated(bytes32 domain, uint256 indexed pubkeyHash, bool indexed trusted);
+
+    /// @notice Emitted when a user changes their discoverability setting
+    /// @param user The user's address
+    /// @param discoverable Whether the user is now discoverable
+    event DiscoverabilityChanged(address indexed user, bool discoverable);
 
     /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {
@@ -1354,5 +1366,60 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         if (!(recipientIndex < m.recipientEmailHashes.length)) revert InvalidIndex();
 
         return m.recipientEmailHashes[recipientIndex];
+    }
+
+    // --- Discoverability ---
+
+    /// @notice Toggle discoverability for the calling user
+    /// @param _discoverable Whether the user should be discoverable
+    function setDiscoverable(bool _discoverable) external onlyRegistered(msg.sender) {
+        if (_discoverable) {
+            if (discoverableIndex[msg.sender] != 0) revert AlreadyDiscoverable();
+            discoverableUsers.push(msg.sender);
+            discoverableIndex[msg.sender] = discoverableUsers.length; // 1-indexed
+            emit DiscoverabilityChanged(msg.sender, true);
+        } else {
+            uint256 idx = discoverableIndex[msg.sender];
+            if (idx == 0) revert NotDiscoverable();
+            // Swap-and-pop removal
+            uint256 lastIdx = discoverableUsers.length - 1;
+            if (idx - 1 != lastIdx) {
+                address lastUser = discoverableUsers[lastIdx];
+                discoverableUsers[idx - 1] = lastUser;
+                discoverableIndex[lastUser] = idx;
+            }
+            discoverableUsers.pop();
+            discoverableIndex[msg.sender] = 0;
+            emit DiscoverabilityChanged(msg.sender, false);
+        }
+    }
+
+    /// @notice Get paginated list of discoverable users
+    /// @param offset Starting index in the discoverable users array
+    /// @param limit Maximum number of addresses to return
+    /// @return result Array of discoverable user addresses
+    function getDiscoverableUsers(uint256 offset, uint256 limit) external view returns (address[] memory result) {
+        uint256 total = discoverableUsers.length;
+        if (offset >= total) {
+            return new address[](0);
+        }
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+        uint256 count = end - offset;
+        result = new address[](count);
+        for (uint256 i = 0; i < count; ) {
+            result[i] = discoverableUsers[offset + i];
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /// @notice Get total number of discoverable users
+    /// @return Total count of users who opted into discoverability
+    function getDiscoverableCount() external view returns (uint256) {
+        return discoverableUsers.length;
     }
 }
