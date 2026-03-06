@@ -204,6 +204,21 @@ npx hardhat deploy --network sepolia
 npx hardhat verify --network sepolia <address>
 ```
 
+### Upgrading (UUPS Proxy)
+
+The contract uses OpenZeppelin's UUPS proxy pattern. The upgrade workflow:
+
+```bash
+PROXY_ADDRESS=0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3 \
+  npx hardhat run scripts/upgrade-farewell.ts --network sepolia
+```
+
+**CRITICAL: `.openzeppelin/sepolia.json` must always be committed.** This manifest tracks proxy-to-implementation mappings and storage layouts. Without it, `upgrades.upgradeProxy()` refuses to run — and more importantly, it cannot validate storage layout compatibility between old and new implementations. A bad storage layout change on mainnet would silently corrupt all user data with no recovery path.
+
+- **Never delete or gitignore** `.openzeppelin/*.json` files
+- **Always commit** the updated manifest after any upgrade
+- If the manifest is ever lost, recover it with `upgrades.forceImport()` using the **current** contract factory against the live proxy, **before** making any code changes. Then commit immediately. See the `forceImport` docs: if you pass a factory with new bytecode, it registers the new code as "current" and `upgradeProxy` will no-op.
+
 ## Cross-Project Compatibility
 
 **IMPORTANT**: Changes to the contract interface affect both the Farewell UI and farewell-claimer:
