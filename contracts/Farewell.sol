@@ -579,6 +579,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         _validateMessageInput(emailByteLen, limbs, payload);
 
         User storage u = users[msg.sender];
+        if (u.deceased) revert UserDeceased();
         index = u.messages.length;
         u.messages.push();
         Message storage m = u.messages[index];
