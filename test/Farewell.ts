@@ -462,6 +462,36 @@ describe("Farewell", function () {
       );
     });
 
+    it("should not allow adding message after deceased", async function () {
+      const checkInPeriod = 86400; // 1 day
+      const gracePeriod = 86400; // 1 day
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Advance time and mark deceased
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // Try to add message (should fail - user is deceased)
+      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of emailWords1) enc.add256(w);
+      enc.add128(skShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = emailWords1.length;
+
+      await expect(
+        FarewellContract.connect(signers.owner).addMessage(
+          encrypted.handles.slice(0, nLimbs),
+          emailBytes1.length,
+          encrypted.handles[nLimbs],
+          payloadBytes1,
+          encrypted.inputProof,
+        ),
+      ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
+    });
+
     it("should not allow non-owner to remove message", async function () {
       // Register
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
