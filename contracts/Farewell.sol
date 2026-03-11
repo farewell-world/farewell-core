@@ -70,6 +70,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bool revoked; // Marks if message has been revoked by owner (cannot be claimed)
         /// @notice Public message stored in cleartext - visible to anyone
         string publicMessage;
+        // === Fields added for passphrase-based key derivation (UUPS-safe append) ===
+        string cryptoScheme;              // e.g., "AES-128-GCM;SHAKE128"
+        EncryptedString passphraseHint;   // FHE-encrypted optional hint (max 64 bytes, 2 limbs)
     }
 
     struct CouncilMember {
@@ -159,6 +162,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error InsufficientDeposit();
     error CouncilFrozenDuringGrace();
     error PublicMessageTooLong();
+    error HintTooLong();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;
@@ -372,6 +376,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     // --- Public message constants ---
     uint32 internal constant MAX_PUBLIC_MESSAGE_BYTE_LEN = 1024; // 1KB
 
+    // --- Passphrase hint constants ---
+    uint32 internal constant MAX_HINT_BYTE_LEN = 64; // 2 limbs max
+
     // --- Council constants ---
     uint256 internal constant MAX_COUNCIL_SIZE = 20;
 
@@ -574,6 +581,30 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         recipientEmail.byteLen = emailByteLen;
     }
 
+    /// @notice Store encrypted passphrase hint limbs and grant FHE access
+    /// @param hint Storage reference to the encrypted string struct
+    /// @param hintLimbs Encrypted hint limbs from the caller
+    /// @param hintByteLen Original hint byte length
+    /// @param hintInputProof FHE input proof for the hint values
+    function _storeEncryptedHint(
+        EncryptedString storage hint,
+        externalEuint256[] calldata hintLimbs,
+        uint32 hintByteLen,
+        bytes calldata hintInputProof
+    ) internal {
+        hint.limbs = new euint256[](hintLimbs.length);
+        for (uint256 i = 0; i < hintLimbs.length; ) {
+            euint256 v = FHE.fromExternal(hintLimbs[i], hintInputProof);
+            hint.limbs[i] = v;
+            FHE.allowThis(v);
+            FHE.allow(v, msg.sender);
+            unchecked {
+                ++i;
+            }
+        }
+        hint.byteLen = hintByteLen;
+    }
+
     /// @notice Internal function to add an encrypted message for the caller
     /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
     /// @param emailByteLen Original email byte length before padding
@@ -581,6 +612,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
     /// @param publicMessage Optional cleartext public message
+    /// @param cryptoScheme Encryption scheme descriptor (e.g., "AES-128-GCM;SHAKE128")
+    /// @param hintLimbs Encrypted passphrase hint limbs (empty if no hint)
+    /// @param hintByteLen Original hint byte length (0 if no hint)
+    /// @param hintInputProof FHE input proof for hint values (empty if no hint)
     /// @return index The index of the newly added message
     function _addMessage(
         externalEuint256[] calldata limbs,
@@ -588,7 +623,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
-        string memory publicMessage
+        string memory publicMessage,
+        string memory cryptoScheme,
+        externalEuint256[] calldata hintLimbs,
+        uint32 hintByteLen,
+        bytes calldata hintInputProof
     ) internal onlyRegistered(msg.sender) returns (uint256 index) {
         _validateMessageInput(emailByteLen, limbs, payload);
         if (!(bytes(publicMessage).length < MAX_PUBLIC_MESSAGE_BYTE_LEN + 1)) revert PublicMessageTooLong();
@@ -609,6 +648,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         m.payload = payload;
         m.createdAt = uint64(block.timestamp);
         m.publicMessage = publicMessage;
+        m.cryptoScheme = cryptoScheme;
+
+        // Store encrypted hint if provided
+        if (hintLimbs.length > 0) {
+            if (!(hintByteLen < MAX_HINT_BYTE_LEN + 1)) revert HintTooLong();
+            if (hintLimbs.length != (uint256(MAX_HINT_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
+            _storeEncryptedHint(m.passphraseHint, hintLimbs, hintByteLen, hintInputProof);
+        }
 
         // Compute hash of all input attributes
         bytes32 messageHash = keccak256(abi.encode(limbs, emailByteLen, encSkShare, payload, publicMessage));
@@ -619,30 +666,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         emit MessageAdded(msg.sender, index);
     }
 
-    /// @notice Add an encrypted message without a public message
-    /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
-    /// @param emailByteLen Original email byte length before padding
-    /// @param encSkShare Encrypted secret key share (euint128)
-    /// @param payload AES-encrypted message payload
-    /// @param inputProof FHE input proof for the encrypted values
-    /// @return index The index of the newly added message
-    function addMessage(
-        externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
-        externalEuint128 encSkShare,
-        bytes calldata payload,
-        bytes calldata inputProof
-    ) external returns (uint256 index) {
-        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, "");
-    }
-
-    /// @notice Add an encrypted message with an optional public message
+    /// @notice Add an encrypted message without hint
     /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
     /// @param emailByteLen Original email byte length before padding
     /// @param encSkShare Encrypted secret key share (euint128)
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
     /// @param publicMessage Optional cleartext public message
+    /// @param cryptoScheme Encryption scheme descriptor (e.g., "AES-128-GCM;SHAKE128")
     /// @return index The index of the newly added message
     function addMessage(
         externalEuint256[] calldata limbs,
@@ -650,18 +681,49 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
-        string calldata publicMessage
+        string calldata publicMessage,
+        string calldata cryptoScheme
     ) external returns (uint256 index) {
-        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
+        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            new externalEuint256[](0), 0, "");
     }
 
-    /// @notice Add a message with per-message reward for delivery verification
+    /// @notice Add an encrypted message with passphrase hint
+    /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
+    /// @param emailByteLen Original email byte length before padding
+    /// @param encSkShare Encrypted secret key share (euint128)
+    /// @param payload AES-encrypted message payload
+    /// @param inputProof FHE input proof for the encrypted values
+    /// @param publicMessage Optional cleartext public message
+    /// @param cryptoScheme Encryption scheme descriptor
+    /// @param hintLimbs Encrypted passphrase hint limbs
+    /// @param hintByteLen Original hint byte length
+    /// @param hintInputProof FHE input proof for hint values
+    /// @return index The index of the newly added message
+    function addMessage(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage,
+        string calldata cryptoScheme,
+        externalEuint256[] calldata hintLimbs,
+        uint32 hintByteLen,
+        bytes calldata hintInputProof
+    ) external returns (uint256 index) {
+        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            hintLimbs, hintByteLen, hintInputProof);
+    }
+
+    /// @notice Add a message with per-message reward for delivery verification (without hint)
     /// @param limbs Encrypted email limbs
     /// @param emailByteLen Original email byte length
     /// @param encSkShare Encrypted secret key share
     /// @param payload Encrypted message payload
     /// @param inputProof FHE input proof
     /// @param publicMessage Public message (optional)
+    /// @param cryptoScheme Encryption scheme descriptor
     /// @param recipientEmailHashes Poseidon hashes of all recipient emails
     /// @param payloadContentHash Keccak256 hash of decrypted payload content
     /// @return index The index of the newly added message
@@ -672,9 +734,49 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bytes calldata payload,
         bytes calldata inputProof,
         string calldata publicMessage,
+        string calldata cryptoScheme,
         bytes32[] calldata recipientEmailHashes,
         bytes32 payloadContentHash
     ) external payable returns (uint256 index) {
+        return _addMessageWithReward(limbs, emailByteLen, encSkShare, payload, inputProof,
+            publicMessage, cryptoScheme, new externalEuint256[](0), 0, "",
+            recipientEmailHashes, payloadContentHash);
+    }
+
+    /// @notice Add a message with per-message reward and passphrase hint
+    function addMessageWithReward(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage,
+        string calldata cryptoScheme,
+        externalEuint256[] calldata hintLimbs,
+        uint32 hintByteLen,
+        bytes calldata hintInputProof,
+        bytes32[] calldata recipientEmailHashes,
+        bytes32 payloadContentHash
+    ) external payable returns (uint256 index) {
+        return _addMessageWithReward(limbs, emailByteLen, encSkShare, payload, inputProof,
+            publicMessage, cryptoScheme, hintLimbs, hintByteLen, hintInputProof,
+            recipientEmailHashes, payloadContentHash);
+    }
+
+    function _addMessageWithReward(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage,
+        string calldata cryptoScheme,
+        externalEuint256[] calldata hintLimbs,
+        uint32 hintByteLen,
+        bytes calldata hintInputProof,
+        bytes32[] calldata recipientEmailHashes,
+        bytes32 payloadContentHash
+    ) internal returns (uint256 index) {
         if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
         if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
 
@@ -686,7 +788,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             emit DepositAdded(msg.sender, msg.value);
         }
 
-        index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage);
+        index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            hintLimbs, hintByteLen, hintInputProof);
 
         // Calculate reward: BASE_REWARD + REWARD_PER_KB * payloadSizeKB, capped at deposit
         uint256 payloadSizeKB = (payload.length + 1023) / 1024;
@@ -747,6 +850,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
     /// @param publicMessage Optional cleartext public message
+    /// @param cryptoScheme Encryption scheme descriptor
+    /// @param hintLimbs Encrypted passphrase hint limbs (empty to keep existing)
+    /// @param hintByteLen Original hint byte length (0 to keep existing)
+    /// @param hintInputProof FHE input proof for hint values
     function editMessage(
         uint256 index,
         externalEuint256[] calldata limbs,
@@ -754,7 +861,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
-        string calldata publicMessage
+        string calldata publicMessage,
+        string calldata cryptoScheme,
+        externalEuint256[] calldata hintLimbs,
+        uint32 hintByteLen,
+        bytes calldata hintInputProof
     ) external onlyRegistered(msg.sender) {
         User storage u = users[msg.sender];
         if (u.deceased) revert UserDeceased();
@@ -771,9 +882,17 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         FHE.allowThis(m._skShare);
         FHE.allow(m._skShare, msg.sender);
 
-        // Update payload and public message
+        // Update payload, public message, and crypto scheme
         m.payload = payload;
         m.publicMessage = publicMessage;
+        m.cryptoScheme = cryptoScheme;
+
+        // Update hint if provided
+        if (hintLimbs.length > 0) {
+            if (!(hintByteLen < MAX_HINT_BYTE_LEN + 1)) revert HintTooLong();
+            if (hintLimbs.length != (uint256(MAX_HINT_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
+            _storeEncryptedHint(m.passphraseHint, hintLimbs, hintByteLen, hintInputProof);
+        }
 
         // Reset reward/proof fields if message had a reward attached
         // (proof commitments no longer match the new content)
@@ -870,6 +989,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         FHE.allow(m._skShare, claimerAddress);
         for (uint256 i = 0; i < m.recipientEmail.limbs.length; ) {
             FHE.allow(m.recipientEmail.limbs[i], claimerAddress);
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Also allow hint limbs if they exist
+        for (uint256 i = 0; i < m.passphraseHint.limbs.length; ) {
+            FHE.allow(m.passphraseHint.limbs[i], claimerAddress);
             unchecked {
                 ++i;
             }
@@ -976,6 +1103,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @return payload The AES-encrypted message payload
     /// @return publicMessage The optional cleartext public message
     /// @return hash The hash of all message inputs
+    /// @return cryptoScheme The encryption scheme descriptor
+    /// @return hintLimbs The encrypted passphrase hint limbs
+    /// @return hintByteLen The original hint byte length
     function retrieve(
         address owner,
         uint256 index
@@ -988,7 +1118,10 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             uint32 emailByteLen,
             bytes memory payload,
             string memory publicMessage,
-            bytes32 hash
+            bytes32 hash,
+            string memory cryptoScheme,
+            euint256[] memory hintLimbs,
+            uint32 hintByteLen
         )
     {
         User storage u = users[owner];
@@ -1012,6 +1145,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         payload = m.payload;
         publicMessage = m.publicMessage;
         hash = m.hash;
+        cryptoScheme = m.cryptoScheme;
+        hintLimbs = m.passphraseHint.limbs;
+        hintByteLen = m.passphraseHint.byteLen;
     }
 
     // --- Council functions ---
