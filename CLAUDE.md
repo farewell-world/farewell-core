@@ -23,7 +23,8 @@ farewell-core/
 │   ├── contract-api.md       # Complete API reference (functions, events, errors, constants)
 │   ├── building-a-client.md  # Guide with TypeScript examples for building alternative clients
 │   ├── proof-structure.md    # Delivery proof architecture & zk-email verification spec
-│   └── discoverability.md   # Opt-in discoverable users list for claimers
+│   ├── discoverability.md   # Opt-in discoverable users list for claimers
+│   └── council-system.md    # Council voting system (plaintext & encrypted modes)
 ├── test/                      # Hardhat tests
 ├── hardhat.config.ts          # Hardhat configuration
 ├── package.json
@@ -57,7 +58,7 @@ The contract is upgradeable using UUPS pattern and manages:
    - Registration with configurable check-in and grace periods
    - Periodic ping to prove liveness
    - Deceased marking after timeout
-   - Council voting during grace period
+   - Council voting during grace period (plaintext or FHE-encrypted modes)
 
 2. **Encrypted Messages**
    - FHE-encrypted recipient emails (split into 32-byte limbs)
@@ -131,8 +132,13 @@ enum UserStatus {
 
 - `addCouncilMember(member)` - Add trusted council member
 - `removeCouncilMember(member)` - Remove council member
-- `voteOnStatus(user, voteAlive)` - Vote during grace period
+- `setEncryptedVoting(enabled)` - Toggle encrypted voting mode
+- `voteOnStatus(user, voteAlive)` - Vote during grace period (plaintext mode)
+- `voteOnStatusEncrypted(user, encVote, inputProof)` - Vote during grace period (encrypted mode)
+- `requestVoteDecryption(user)` - Manually request decryption of encrypted vote result
+- `resolveEncryptedVote(user, decryptedResult, decryptionProof)` - Resolve encrypted vote with KMS proof
 - `getCouncilMembers(user)` - Get council member list
+- `getEncryptedGraceVoteStatus(user)` - Get encrypted vote status
 
 ### Admin (Owner Only)
 
@@ -160,6 +166,9 @@ event RewardClaimed(address indexed user, uint256 indexed messageIndex, address 
 event ZkEmailVerifierSet(address verifier);
 event DkimKeyUpdated(bytes32 domain, uint256 pubkeyHash, bool trusted);
 event DiscoverabilityChanged(address indexed user, bool discoverable);
+event EncryptedGraceVoteCast(address indexed user, address indexed voter);
+event VoteDecryptionRequested(address indexed user);
+event EncryptedVoteResolved(address indexed user, uint8 result);
 ```
 
 ## FHE Integration
@@ -168,6 +177,7 @@ The contract uses Zama's FHEVM for encrypted data:
 
 - **Encrypted Strings**: Emails are padded to MAX_EMAIL_BYTE_LEN and split into euint256 limbs
 - **Encrypted Integers**: Key shares stored as euint128
+- **Encrypted Council Votes**: `euint8` values (1=alive, 2=dead) with homomorphic tallying via `FHE.eq`, `FHE.select`, `FHE.add`, `FHE.ge`; async decryption via `FHE.makePubliclyDecryptable` and `FHE.checkSignatures`
 - **Access Control**: `FHE.allow()` grants decryption access to specific addresses
 - **Coprocessor**: Uses ZamaConfig for coprocessor configuration
 
@@ -240,6 +250,7 @@ PROXY_ADDRESS=0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3 \
 | [docs/building-a-client.md](docs/building-a-client.md) | Guide with TypeScript examples for building alternative clients                         |
 | [docs/proof-structure.md](docs/proof-structure.md)     | Delivery proof architecture — zk-email format, Groth16 verification, data structures    |
 | [docs/discoverability.md](docs/discoverability.md)     | Opt-in discoverable users list — claimer workflow, privacy considerations                |
+| [docs/council-system.md](docs/council-system.md)       | Council voting system — plaintext and FHE-encrypted modes, async decryption, security    |
 
 ## Related Projects
 

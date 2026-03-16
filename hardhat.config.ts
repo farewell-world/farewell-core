@@ -37,6 +37,7 @@ const config: HardhatUserConfig = {
         mnemonic: MNEMONIC,
       },
       chainId: 31337,
+      allowUnlimitedContractSize: true, // Contract exceeds 24KB with FHE operations
     },
     anvil: {
       accounts: {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.27;
 
-import {FHE, euint256, euint128, externalEuint128, externalEuint256} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint256, euint128, euint8, ebool, externalEuint128, externalEuint256, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 // OZ upgradeable imports
@@ -98,6 +98,22 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bool decisionAlive; // The decision (true=alive, false=dead)
     }
 
+    /// @notice Encrypted council vote state using FHEVM
+    struct EncryptedGraceVote {
+        mapping(address => bool) hasAttempted; // who has called the function (plaintext, for trigger)
+        mapping(address => euint8) voterAliveContrib; // per-voter alive contribution (0 or 1, encrypted)
+        mapping(address => euint8) voterDeadContrib; // per-voter dead contribution (0 or 1, encrypted)
+        euint8 encAliveSum; // running sum of alive votes (encrypted)
+        euint8 encDeadSum; // running sum of dead votes (encrypted)
+        uint256 uniqueAttempts; // plaintext count of unique voters (for trigger)
+        bool decryptionRequested; // whether decryption was triggered
+        euint8 encResult; // packed result handle (0/1/2)
+        uint8 decryptedResult; // cleartext after KMS verification
+        bool resultVerified; // KMS proof verified
+        bool decided; // decision applied
+        bool decisionAlive; // the applied decision
+    }
+
     struct User {
         string name; // optional
         uint64 checkInPeriod; // seconds
@@ -110,6 +126,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         uint256 deposit; // ETH deposited for delivery costs
         // All messages for this user live here
         Message[] messages;
+        // === Fields added for encrypted council voting (UUPS-safe append) ===
+        bool encryptedVoting; // Whether council votes use FHE encryption (default true for new users)
     }
 
     // --- Custom Errors ---
@@ -163,6 +181,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error CouncilFrozenDuringGrace();
     error PublicMessageTooLong();
     error HintTooLong();
+    error DecryptionNotRequested();
+    error DecryptionAlreadyRequested();
+    error ResultAlreadyVerified();
+    error PlaintextVotingMode();
+    error EncryptedVotingMode();
+    error NoVotesCast();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;
@@ -196,8 +220,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice 1-indexed position in discoverableUsers (0 = not in list)
     mapping(address user => uint256 position) internal discoverableIndex;
 
+    /// @notice Per-user encrypted grace period voting state
+    mapping(address user => EncryptedGraceVote vote) internal encryptedGraceVotes;
+
     // Storage gap for upgradeability safety
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 
     // -----------------------
     // Events
@@ -319,6 +346,20 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param discoverable Whether the user is now discoverable
     event DiscoverabilityChanged(address indexed user, bool indexed discoverable);
 
+    /// @notice Emitted when an encrypted council vote is cast (vote value is NOT revealed)
+    /// @param user The user being voted on
+    /// @param voter The council member casting the encrypted vote
+    event EncryptedGraceVoteCast(address indexed user, address indexed voter);
+
+    /// @notice Emitted when decryption of an encrypted vote result is requested
+    /// @param user The user whose vote result is being decrypted
+    event VoteDecryptionRequested(address indexed user);
+
+    /// @notice Emitted when an encrypted vote result is verified and applied
+    /// @param user The user whose status was decided
+    /// @param result The decrypted result (0=no majority, 1=alive, 2=deceased)
+    event EncryptedVoteResolved(address indexed user, uint8 result);
+
     /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {
         if (users[user].lastCheckIn == 0) revert NotRegistered();
@@ -346,6 +387,13 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     function initializeV2() public reinitializer(2) {
         // Update the coprocessor config to use FHEVM v0.9 ZamaConfig
         FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig());
+    }
+
+    /// @notice Reinitializer for v3 upgrade - adds encrypted council voting support
+    /// @dev No storage migration needed: encryptedVoting defaults to false for existing users.
+    ///      New users will get encryptedVoting=true via register().
+    function initializeV3() public reinitializer(3) {
+        // No migration needed — existing users keep plaintext voting (bool defaults to false)
     }
 
     /// @notice Authorize an upgrade to a new implementation; authorization enforced by onlyOwner modifier
@@ -386,7 +434,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param name Optional display name (max 100 bytes)
     /// @param checkInPeriod Check-in period in seconds (min 1 day)
     /// @param gracePeriod Grace period in seconds (min 1 day)
-    function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) internal {
+    /// @param encryptedVoting Whether council votes should use FHE encryption
+    function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod, bool encryptedVoting) internal {
         if (!(checkInPeriod > 1 days - 1)) revert CheckInPeriodTooShort();
         if (!(gracePeriod > 1 days - 1)) revert GracePeriodTooShort();
         if (!(bytes(name).length < 101)) revert NameTooLong();
@@ -401,6 +450,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             u.name = name;
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
+            u.encryptedVoting = encryptedVoting;
             emit UserUpdated(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         } else {
             // new user
@@ -410,6 +460,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             u.lastCheckIn = uint64(block.timestamp);
             u.registeredOn = uint64(block.timestamp);
             u.deceased = false;
+            u.encryptedVoting = encryptedVoting;
             ++totalUsers;
             emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         }
@@ -417,34 +468,39 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
-    /// @notice Register with a name and custom check-in and grace periods
+    /// @notice Register with a name, custom periods, and encrypted voting preference
+    /// @param name Optional display name (max 100 bytes)
+    /// @param checkInPeriod Check-in period in seconds (min 1 day)
+    /// @param gracePeriod Grace period in seconds (min 1 day)
+    /// @param encryptedVoting Whether council votes should use FHE encryption
+    function register(string calldata name, uint64 checkInPeriod, uint64 gracePeriod, bool encryptedVoting) external {
+        _register(name, checkInPeriod, gracePeriod, encryptedVoting);
+    }
+
+    /// @notice Register with a name and custom check-in and grace periods (encrypted voting defaults to true)
     /// @param name Optional display name (max 100 bytes)
     /// @param checkInPeriod Check-in period in seconds (min 1 day)
     /// @param gracePeriod Grace period in seconds (min 1 day)
     function register(string calldata name, uint64 checkInPeriod, uint64 gracePeriod) external {
-        _register(name, checkInPeriod, gracePeriod);
+        _register(name, checkInPeriod, gracePeriod, true);
     }
 
-    /// @notice Register with custom check-in and grace periods and no name
+    /// @notice Register with custom check-in and grace periods and no name (encrypted voting defaults to true)
     /// @param checkInPeriod Check-in period in seconds (min 1 day)
     /// @param gracePeriod Grace period in seconds (min 1 day)
     function register(uint64 checkInPeriod, uint64 gracePeriod) external {
-        _register("", checkInPeriod, gracePeriod);
+        _register("", checkInPeriod, gracePeriod, true);
     }
 
-    /// @notice Register with a name and default check-in and grace periods
+    /// @notice Register with a name and default check-in and grace periods (encrypted voting defaults to true)
     /// @param name Optional display name (max 100 bytes)
     function register(string calldata name) external {
-        uint64 checkInPeriod = DEFAULT_CHECKIN;
-        uint64 gracePeriod = DEFAULT_GRACE;
-        _register(name, checkInPeriod, gracePeriod);
+        _register(name, DEFAULT_CHECKIN, DEFAULT_GRACE, true);
     }
 
-    /// @notice Register with default check-in and grace periods and no name
+    /// @notice Register with default check-in and grace periods and no name (encrypted voting defaults to true)
     function register() external {
-        uint64 checkInPeriod = DEFAULT_CHECKIN;
-        uint64 gracePeriod = DEFAULT_GRACE;
-        _register("", checkInPeriod, gracePeriod);
+        _register("", DEFAULT_CHECKIN, DEFAULT_GRACE, true);
     }
 
     /// @notice Check if an address is registered
@@ -522,13 +578,21 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         // so they re-enter the normal liveness cycle
         if (u.finalAlive) {
             u.finalAlive = false;
-            _resetGraceVote(msg.sender);
+            if (u.encryptedVoting) {
+                _resetEncryptedGraceVote(msg.sender);
+            } else {
+                _resetGraceVote(msg.sender);
+            }
         } else {
             // Reset any stale grace votes from a previous cycle
             // (e.g., user entered grace, votes were cast, then user pinged before grace ended)
             uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
             if (block.timestamp > checkInEnd) {
-                _resetGraceVote(msg.sender);
+                if (u.encryptedVoting) {
+                    _resetEncryptedGraceVote(msg.sender);
+                } else {
+                    _resetGraceVote(msg.sender);
+                }
             }
         }
 
@@ -588,9 +652,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param hintInputProof FHE input proof for the hint values
     function _storeEncryptedHint(
         EncryptedString storage hint,
-        externalEuint256[] calldata hintLimbs,
+        externalEuint256[] memory hintLimbs,
         uint32 hintByteLen,
-        bytes calldata hintInputProof
+        bytes memory hintInputProof
     ) internal {
         hint.limbs = new euint256[](hintLimbs.length);
         for (uint256 i = 0; i < hintLimbs.length; ) {
@@ -625,9 +689,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bytes calldata inputProof,
         string memory publicMessage,
         string memory cryptoScheme,
-        externalEuint256[] calldata hintLimbs,
+        externalEuint256[] memory hintLimbs,
         uint32 hintByteLen,
-        bytes calldata hintInputProof
+        bytes memory hintInputProof
     ) internal onlyRegistered(msg.sender) returns (uint256 index) {
         _validateMessageInput(emailByteLen, limbs, payload);
         if (!(bytes(publicMessage).length < MAX_PUBLIC_MESSAGE_BYTE_LEN + 1)) revert PublicMessageTooLong();
@@ -771,9 +835,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bytes calldata inputProof,
         string calldata publicMessage,
         string calldata cryptoScheme,
-        externalEuint256[] calldata hintLimbs,
+        externalEuint256[] memory hintLimbs,
         uint32 hintByteLen,
-        bytes calldata hintInputProof,
+        bytes memory hintInputProof,
         bytes32[] calldata recipientEmailHashes,
         bytes32 payloadContentHash
     ) internal returns (uint256 index) {
@@ -1319,10 +1383,11 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         emit GraceVoteCast(user, msg.sender, voteAlive);
     }
 
-    /// @notice Vote on a user's status during grace period
+    /// @notice Vote on a user's status during grace period (plaintext mode only)
     /// @param user The user to vote on
     /// @param voteAlive True to vote the user is alive, false to vote dead
     function voteOnStatus(address user, bool voteAlive) external onlyRegistered(user) {
+        if (users[user].encryptedVoting) revert EncryptedVotingMode();
         if (!councilMembers[user][msg.sender]) revert NotCouncilMember();
 
         User storage u = users[user];
@@ -1335,6 +1400,222 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         } else if (!(vote.deadVotes < majority)) {
             _applyDeadDecision(user, u, vote);
         }
+    }
+
+    // --- Encrypted council voting (FHEVM) ---
+
+    /// @notice Cast an encrypted vote on a user's status during grace period
+    /// @dev Vote values: 1=alive, 2=not-alive. Invalid values (not 1 or 2) are silently ignored.
+    ///      Voters can re-submit to replace their previous vote (enables recovery from invalid submissions).
+    /// @param user The user to vote on
+    /// @param encVote FHE-encrypted vote value
+    /// @param inputProof The FHE input proof for the encrypted vote
+    function voteOnStatusEncrypted(
+        address user,
+        externalEuint8 encVote,
+        bytes calldata inputProof
+    ) external onlyRegistered(user) {
+        if (!users[user].encryptedVoting) revert PlaintextVotingMode();
+        if (!councilMembers[user][msg.sender]) revert NotCouncilMember();
+
+        User storage u = users[user];
+        if (u.deceased) revert UserDeceased();
+        if (u.finalAlive) revert VoteAlreadyDecided();
+
+        // Validate grace period
+        uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+        uint256 graceEnd = checkInEnd + uint256(u.gracePeriod);
+        if (!(block.timestamp > checkInEnd)) revert NotInGracePeriod();
+        if (!(block.timestamp < graceEnd + 1)) revert GracePeriodEnded();
+
+        EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+        if (evote.decided) revert VoteAlreadyDecided();
+        if (evote.decryptionRequested) revert DecryptionAlreadyRequested();
+
+        // Verify and internalize the encrypted vote
+        euint8 vote = FHE.fromExternal(encVote, inputProof);
+        FHE.allowThis(vote);
+
+        // Compute contributions: only 1 (alive) or 2 (dead) produce non-zero values
+        ebool isAlive = FHE.eq(vote, FHE.asEuint8(1));
+        ebool isDead = FHE.eq(vote, FHE.asEuint8(2));
+        euint8 aliveContrib = FHE.select(isAlive, FHE.asEuint8(1), FHE.asEuint8(0));
+        euint8 deadContrib = FHE.select(isDead, FHE.asEuint8(1), FHE.asEuint8(0));
+
+        // Subtract previous contribution if exists (replacement semantics)
+        if (FHE.isInitialized(evote.voterAliveContrib[msg.sender])) {
+            evote.encAliveSum = FHE.sub(evote.encAliveSum, evote.voterAliveContrib[msg.sender]);
+            evote.encDeadSum = FHE.sub(evote.encDeadSum, evote.voterDeadContrib[msg.sender]);
+        }
+
+        // Store new per-voter contribution
+        evote.voterAliveContrib[msg.sender] = aliveContrib;
+        evote.voterDeadContrib[msg.sender] = deadContrib;
+        FHE.allowThis(aliveContrib);
+        FHE.allowThis(deadContrib);
+
+        // Add new contribution to sums
+        if (FHE.isInitialized(evote.encAliveSum)) {
+            evote.encAliveSum = FHE.add(evote.encAliveSum, aliveContrib);
+            evote.encDeadSum = FHE.add(evote.encDeadSum, deadContrib);
+        } else {
+            evote.encAliveSum = aliveContrib;
+            evote.encDeadSum = deadContrib;
+        }
+        FHE.allowThis(evote.encAliveSum);
+        FHE.allowThis(evote.encDeadSum);
+
+        // Track unique callers (plaintext, for triggering majority check)
+        if (!evote.hasAttempted[msg.sender]) {
+            evote.hasAttempted[msg.sender] = true;
+            ++evote.uniqueAttempts;
+        }
+
+        emit EncryptedGraceVoteCast(user, msg.sender);
+
+        // Auto-trigger decryption when enough unique voters have attempted
+        uint256 councilSize = councils[user].length;
+        uint256 majority = (councilSize / 2) + 1;
+        if (evote.uniqueAttempts >= majority) {
+            _requestVoteDecryption(user, evote, majority);
+        }
+    }
+
+    /// @notice Internal: compute encrypted result and mark for public decryption
+    /// @param user The user whose vote is being resolved
+    /// @param evote Storage reference to the encrypted vote state
+    /// @param majority The majority threshold
+    function _requestVoteDecryption(
+        address user,
+        EncryptedGraceVote storage evote,
+        uint256 majority
+    ) internal {
+        if (evote.decryptionRequested) return;
+
+        euint8 encMajority = FHE.asEuint8(uint8(majority));
+
+        // Check each side independently
+        ebool aliveWins = FHE.ge(evote.encAliveSum, encMajority);
+        ebool deadWins = FHE.ge(evote.encDeadSum, encMajority);
+
+        // Pack result: 0=no majority, 1=alive, 2=dead
+        euint8 result = FHE.select(aliveWins, FHE.asEuint8(1), FHE.asEuint8(0));
+        result = FHE.select(deadWins, FHE.asEuint8(2), result);
+
+        // Mark for public decryption (KMS signers will produce proof)
+        evote.encResult = FHE.makePubliclyDecryptable(result);
+        FHE.allowThis(evote.encResult);
+        evote.decryptionRequested = true;
+
+        emit VoteDecryptionRequested(user);
+    }
+
+    /// @notice Request decryption of encrypted vote result (callable by anyone)
+    /// @dev Use when auto-trigger didn't fire (e.g., grace period expired with votes cast)
+    /// @param user The user whose vote result should be decrypted
+    function requestVoteDecryption(address user) external onlyRegistered(user) {
+        User storage u = users[user];
+        if (!u.encryptedVoting) revert PlaintextVotingMode();
+        if (u.deceased) revert UserDeceased();
+
+        EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+        if (evote.decided) revert VoteAlreadyDecided();
+        if (evote.decryptionRequested) revert DecryptionAlreadyRequested();
+        if (evote.uniqueAttempts == 0) revert NoVotesCast();
+
+        uint256 majority = (councils[user].length / 2) + 1;
+        _requestVoteDecryption(user, evote, majority);
+    }
+
+    /// @notice Resolve an encrypted vote by providing KMS decryption proof
+    /// @param user The user whose vote is being resolved
+    /// @param decryptedResult The cleartext result (0=no majority, 1=alive, 2=deceased)
+    /// @param decryptionProof The KMS proof of correct decryption
+    function resolveEncryptedVote(
+        address user,
+        uint8 decryptedResult,
+        bytes calldata decryptionProof
+    ) external onlyRegistered(user) {
+        User storage u = users[user];
+        EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+
+        if (!evote.decryptionRequested) revert DecryptionNotRequested();
+        if (evote.resultVerified) revert ResultAlreadyVerified();
+        if (evote.decided) revert VoteAlreadyDecided();
+
+        // Verify KMS signatures
+        bytes32[] memory handlesList = new bytes32[](1);
+        handlesList[0] = euint8.unwrap(evote.encResult);
+
+        bytes memory abiEncodedCleartexts = abi.encode(decryptedResult);
+        FHE.checkSignatures(handlesList, abiEncodedCleartexts, decryptionProof);
+
+        // Store verified result
+        evote.decryptedResult = decryptedResult;
+        evote.resultVerified = true;
+
+        emit EncryptedVoteResolved(user, decryptedResult);
+
+        // Apply decision based on result
+        if (decryptedResult == 1) {
+            // Alive wins
+            evote.decided = true;
+            evote.decisionAlive = true;
+            u.lastCheckIn = uint64(block.timestamp);
+            u.finalAlive = true;
+            emit StatusDecided(user, true);
+            emit Ping(user, u.lastCheckIn);
+        } else if (decryptedResult == 2) {
+            // Dead wins
+            evote.decided = true;
+            evote.decisionAlive = false;
+            u.deceased = true;
+            u.notifier = Notifier({notificationTime: uint64(block.timestamp), notifierAddress: msg.sender});
+            emit StatusDecided(user, false);
+            emit Deceased(user, uint64(block.timestamp), msg.sender);
+        }
+        // If decryptedResult == 0: no majority. Reset decryption state to allow more votes.
+        if (decryptedResult == 0) {
+            evote.decryptionRequested = false;
+            evote.resultVerified = false;
+            evote.decryptedResult = 0;
+        }
+    }
+
+    /// @notice Internal helper to reset encrypted grace vote state for a user
+    /// @param user The user whose encrypted grace vote state should be reset
+    function _resetEncryptedGraceVote(address user) internal {
+        EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+        CouncilMember[] storage council = councils[user];
+        uint256 length = council.length;
+        for (uint256 i = 0; i < length; ) {
+            address m = council[i].member;
+            delete evote.hasAttempted[m];
+            // Reset per-voter encrypted contributions to uninitialized state
+            evote.voterAliveContrib[m] = euint8.wrap(0);
+            evote.voterDeadContrib[m] = euint8.wrap(0);
+            unchecked {
+                ++i;
+            }
+        }
+        evote.encAliveSum = euint8.wrap(0);
+        evote.encDeadSum = euint8.wrap(0);
+        evote.encResult = euint8.wrap(0);
+        evote.uniqueAttempts = 0;
+        evote.decryptionRequested = false;
+        evote.decryptedResult = 0;
+        evote.resultVerified = false;
+        evote.decided = false;
+        evote.decisionAlive = false;
+    }
+
+    /// @notice Toggle encrypted voting mode (cannot change during grace period)
+    /// @param enabled Whether to enable encrypted council voting
+    function setEncryptedVoting(bool enabled) external onlyRegistered(msg.sender) {
+        User storage u = users[msg.sender];
+        if (u.deceased) revert UserDeceased();
+        if (_isInGracePeriod(u)) revert CouncilFrozenDuringGrace();
+        u.encryptedVoting = enabled;
     }
 
     /// @notice Get user's current status
@@ -1397,15 +1678,20 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         }
     }
 
-    /// @notice Get grace vote status for a user
+    /// @notice Get grace vote status for a user (plaintext mode)
+    /// @dev For encrypted mode, use getEncryptedGraceVoteStatus instead
     /// @param user The user address
-    /// @return aliveVotes Number of alive votes
-    /// @return deadVotes Number of dead votes
+    /// @return aliveVotes Number of alive votes (0 for encrypted mode — vote counts are secret)
+    /// @return deadVotes Number of dead votes (0 for encrypted mode — vote counts are secret)
     /// @return decided Whether a decision has been reached
     /// @return decisionAlive The decision if decided (true=alive)
     function getGraceVoteStatus(
         address user
     ) external view returns (uint256 aliveVotes, uint256 deadVotes, bool decided, bool decisionAlive) {
+        if (users[user].encryptedVoting) {
+            EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+            return (0, 0, evote.decided, evote.decisionAlive);
+        }
         GraceVote storage vote = graceVotes[user];
         return (vote.aliveVotes, vote.deadVotes, vote.decided, vote.decisionAlive);
     }
@@ -1413,11 +1699,55 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Check if a council member has voted on a user's grace period
     /// @param user The user address
     /// @param member The council member address
-    /// @return hasVoted Whether the member has voted
-    /// @return votedAlive How they voted (only valid if hasVoted is true)
+    /// @return hasVoted Whether the member has voted (for encrypted mode: whether they attempted)
+    /// @return votedAlive How they voted (always false for encrypted mode — vote values are secret)
     function getGraceVote(address user, address member) external view returns (bool hasVoted, bool votedAlive) {
+        if (users[user].encryptedVoting) {
+            EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+            return (evote.hasAttempted[member], false);
+        }
         GraceVote storage vote = graceVotes[user];
         return (vote.hasVoted[member], vote.votedAlive[member]);
+    }
+
+    /// @notice Get encrypted grace vote status for a user
+    /// @param user The user address
+    /// @return uniqueAttempts Number of unique voters who have attempted
+    /// @return decryptionRequested Whether decryption has been requested
+    /// @return resultVerified Whether the KMS result has been verified
+    /// @return decryptedResult The verified result (0=none/no majority, 1=alive, 2=deceased)
+    /// @return decided Whether a decision was reached
+    /// @return decisionAlive The decision (valid only if decided==true)
+    function getEncryptedGraceVoteStatus(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256 uniqueAttempts,
+            bool decryptionRequested,
+            bool resultVerified,
+            uint8 decryptedResult,
+            bool decided,
+            bool decisionAlive
+        )
+    {
+        EncryptedGraceVote storage evote = encryptedGraceVotes[user];
+        return (
+            evote.uniqueAttempts,
+            evote.decryptionRequested,
+            evote.resultVerified,
+            evote.decryptedResult,
+            evote.decided,
+            evote.decisionAlive
+        );
+    }
+
+    /// @notice Check if a user has encrypted voting enabled
+    /// @param user The user address
+    /// @return True if the user has encrypted voting enabled
+    function getEncryptedVoting(address user) external view onlyRegistered(user) returns (bool) {
+        return users[user].encryptedVoting;
     }
 
     // --- Deposits and Rewards ---
