@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.27;
 
-import {FHE, euint256, euint128, euint8, ebool, externalEuint128, externalEuint256, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint256, euint128, euint64, euint8, ebool, externalEuint128, externalEuint256, externalEuint64, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
-// OZ upgradeable imports
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+// OZ non-upgradeable imports
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+// ERC-20 support
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title Groth16 verifier interface for zk-email proofs
 /// @author Farewell Protocol
@@ -28,6 +30,14 @@ interface IGroth16Verifier {
     ) external view returns (bool);
 }
 
+/// @title Confidential ERC-20 interface (Zama fhEVM wrapped tokens)
+/// @notice Interface for confidential ERC-20 tokens that operate on encrypted balances
+interface IConfidentialERC20 {
+    function transfer(address to, euint64 amount) external returns (bool);
+    function transferFrom(address from, address to, euint64 amount) external returns (bool);
+    function underlying() external view returns (address);
+}
+
 /// @title Farewell (email-recipient version)
 /// @author Farewell Protocol
 /// @notice On-chain posthumous message release via timeout.
@@ -37,7 +47,9 @@ interface IGroth16Verifier {
 /// @dev NOTE: There is no recovery mechanism if a user is legitimately marked deceased
 ///      but was actually unable to ping (hospitalization, lost keys, etc.).
 ///      This is a known limitation to be addressed in future versions.
-contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
+contract Farewell is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     // Notifier is the entity that marked a user as deceased
     struct Notifier {
         uint64 notificationTime; // seconds
@@ -52,12 +64,19 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         uint32 byteLen; // original email length in bytes (not chars) - used for trimming padding
     }
 
+    /// @notice Reward type for messages
+    enum RewardType { None, Eth, Erc20, ConfidentialErc20 }
+
     struct Message {
         // Encrypted recipient email (coprocessor-backed euints) + encrypted skShare.
         EncryptedString recipientEmail; // encrypted recipient e-mail
         euint128 _skShare;
-        // ZK-Email reward fields
-        uint256 reward; // Per-message ETH reward for delivery
+        // Multi-token reward fields
+        RewardType rewardType;
+        address rewardToken;              // address(0) for ETH
+        uint256 reward;                   // plaintext amount (ETH or ERC-20), 0 for confidential
+        euint64 encryptedRewardAmount;    // encrypted amount (ConfidentialErc20 only)
+        // ZK-Email proof fields
         uint256 provenRecipientsBitmap; // Bitmap tracking which recipients have been proven (up to 256)
         bytes32[] recipientEmailHashes; // Poseidon hashes of each recipient email (for multi-recipient)
         bytes32 payloadContentHash; // Keccak256 hash of decrypted payload content
@@ -70,7 +89,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bool revoked; // Marks if message has been revoked by owner (cannot be claimed)
         /// @notice Public message stored in cleartext - visible to anyone
         string publicMessage;
-        // === Fields added for passphrase-based key derivation (UUPS-safe append) ===
+        // === Fields added for passphrase-based key derivation ===
         string cryptoScheme;              // e.g., "AES-128-GCM;SHAKE128"
         EncryptedString passphraseHint;   // FHE-encrypted optional hint (max 64 bytes, 2 limbs)
     }
@@ -114,6 +133,15 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bool decisionAlive; // the applied decision
     }
 
+    /// @notice Pending unshielded claim for confidential token rewards
+    struct PendingUnshieldedClaim {
+        address claimer;
+        address cToken;
+        euint64 encAmount;
+        bool decryptionRequested;
+        bool executed;
+    }
+
     struct User {
         string name; // optional
         uint64 checkInPeriod; // seconds
@@ -123,10 +151,9 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         bool deceased; // set after timeout or council vote
         bool finalAlive; // set if council voted user alive - prevents future deceased status
         Notifier notifier; // who marked as deceased
-        uint256 deposit; // ETH deposited for delivery costs
         // All messages for this user live here
         Message[] messages;
-        // === Fields added for encrypted council voting (UUPS-safe append) ===
+        // Encrypted council voting
         bool encryptedVoting; // Whether council votes use FHE encryption (default true for new users)
     }
 
@@ -149,7 +176,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error GracePeriodEnded();
     error VoteAlreadyDecided();
     error AlreadyVoted();
-    error MustDepositSomething();
     error EthTransferFailed();
     error CheckInPeriodTooShort();
     error GracePeriodTooShort();
@@ -177,7 +203,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error MessageNotClaimed();
     error AlreadyDiscoverable();
     error NotDiscoverable();
-    error InsufficientDeposit();
     error CouncilFrozenDuringGrace();
     error PublicMessageTooLong();
     error HintTooLong();
@@ -187,6 +212,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     error PlaintextVotingMode();
     error EncryptedVotingMode();
     error NoVotesCast();
+    error TokenNotAllowed();
+    error InvalidRewardType();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;
@@ -208,8 +235,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     address public zkEmailVerifier;
     /// @notice Trusted DKIM public key hashes per domain
     mapping(bytes32 domain => mapping(uint256 pubkeyHash => bool trusted)) public trustedDkimKeys;
-    /// @notice Total locked rewards per user
-    mapping(address user => uint256 amount) public lockedRewards;
 
     // Solidity automatically initializes all storage variables to zero by default.
     uint64 private totalUsers;
@@ -223,8 +248,14 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Per-user encrypted grace period voting state
     mapping(address user => EncryptedGraceVote vote) internal encryptedGraceVotes;
 
-    // Storage gap for upgradeability safety
-    uint256[47] private __gap;
+    /// @notice Whitelisted reward tokens (ERC-20 and confidential ERC-20)
+    mapping(address token => bool allowed) public allowedRewardTokens;
+    /// @notice Per-user per-token locked reward amounts (ETH and ERC-20)
+    mapping(address user => mapping(address token => uint256)) public lockedTokenRewards;
+    /// @notice Per-user per-token locked confidential reward amounts
+    mapping(address user => mapping(address token => euint64)) internal lockedConfidentialRewards;
+    /// @notice Pending unshielded claims awaiting KMS decryption
+    mapping(bytes32 claimKey => PendingUnshieldedClaim) internal pendingUnshieldedClaims;
 
     // -----------------------
     // Events
@@ -307,11 +338,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param isAlive True if the council voted alive, false if deceased
     event StatusDecided(address indexed user, bool indexed isAlive);
 
-    /// @notice Emitted when ETH is deposited for delivery costs
-    /// @param user The depositing user's address
-    /// @param amount The deposited ETH amount
-    event DepositAdded(address indexed user, uint256 indexed amount);
-
     /// @notice Emitted when a delivery reward is claimed after proof submission
     /// @param user The deceased user's address
     /// @param messageIndex The message index
@@ -360,45 +386,39 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param result The decrypted result (0=no majority, 1=alive, 2=deceased)
     event EncryptedVoteResolved(address indexed user, uint8 result);
 
+    /// @notice Emitted when a reward token is whitelisted or removed
+    /// @param token The token address
+    /// @param allowed Whether the token is now allowed
+    event RewardTokenWhitelisted(address indexed token, bool indexed allowed);
+
+    /// @notice Emitted when a token (ERC-20) reward is claimed
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    /// @param claimer The address claiming the reward
+    /// @param token The token address
+    /// @param amount The reward amount
+    event TokenRewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, address token, uint256 amount);
+
+    /// @notice Emitted when a confidential token reward is claimed
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    /// @param claimer The address claiming the reward
+    /// @param token The confidential token address
+    /// @param shielded Whether the claim was shielded (encrypted transfer) or unshielded
+    event ConfidentialRewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, address token, bool shielded);
+
     /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {
         if (users[user].lastCheckIn == 0) revert NotRegistered();
         _;
     }
 
-    /// @notice Constructor disables initializers to prevent direct deployment
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    /// @notice Initialize the contract, sets initial owner and coprocessor config
-    /// @dev Replaces constructor; sets owner, upgradeable base contracts, and FHEVM coprocessor
-    function initialize() public initializer {
-        __Ownable_init(msg.sender); // set initial owner (OZ v5 style)
-        __UUPSUpgradeable_init();
-        __ReentrancyGuard_init();
+    /// @notice Constructor sets initial owner and coprocessor config
+    /// @param initialOwner The address that will own this contract
+    constructor(address initialOwner) Ownable(initialOwner) {
         // Initialize FHEVM coprocessor using ZamaConfig (v0.9 - auto-resolves by chainId)
         FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig());
     }
-
-    /// @notice Reinitializer for v2 upgrade - updates coprocessor config to new SDK version
-    /// @dev This must be called after upgrading from v1 to v2 (FHEVM v0.9)
-    function initializeV2() public reinitializer(2) {
-        // Update the coprocessor config to use FHEVM v0.9 ZamaConfig
-        FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig());
-    }
-
-    /// @notice Reinitializer for v3 upgrade - adds encrypted council voting support
-    /// @dev No storage migration needed: encryptedVoting defaults to false for existing users.
-    ///      New users will get encryptedVoting=true via register().
-    function initializeV3() public reinitializer(3) {
-        // No migration needed — existing users keep plaintext voting (bool defaults to false)
-    }
-
-    /// @notice Authorize an upgrade to a new implementation; authorization enforced by onlyOwner modifier
-    /// @param newImpl The new implementation address
-    function _authorizeUpgrade(address newImpl) internal override onlyOwner {} // solhint-disable-line no-empty-blocks
 
     /// @notice Expose the protocol id (useful for clients/frontends)
     /// @return The confidential protocol ID from ZamaConfig
@@ -416,10 +436,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     uint32 internal constant MAX_EMAIL_BYTE_LEN = 224;
     /// @notice Maximum payload byte length (optional, for future payload padding)
     uint32 internal constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
-
-    // --- Reward constants ---
-    uint256 internal constant BASE_REWARD = 0.01 ether; // Base reward per message
-    uint256 internal constant REWARD_PER_KB = 0.005 ether; // Additional reward per KB of payload
 
     // --- Public message constants ---
     uint32 internal constant MAX_PUBLIC_MESSAGE_BYTE_LEN = 1024; // 1KB
@@ -617,7 +633,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         if (limbs.length == 0) revert NoLimbs();
         if (payload.length == 0) revert BadPayloadSize();
         if (!(payload.length < MAX_PAYLOAD_BYTE_LEN + 1)) revert PayloadTooLong();
-        // All emails must be padded to MAX_EMAIL_BYTE_LEN (8 limbs for 256 bytes)
+        // All emails must be padded to MAX_EMAIL_BYTE_LEN (7 limbs for 224 bytes)
         if (limbs.length != (uint256(MAX_EMAIL_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
     }
 
@@ -780,7 +796,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             hintLimbs, hintByteLen, hintInputProof);
     }
 
-    /// @notice Add a message with per-message reward for delivery verification (without hint)
+    /// @notice Add a message with ETH or ERC-20 reward for delivery verification (without hint)
     /// @param limbs Encrypted email limbs
     /// @param emailByteLen Original email byte length
     /// @param encSkShare Encrypted secret key share
@@ -790,6 +806,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param cryptoScheme Encryption scheme descriptor
     /// @param recipientEmailHashes Poseidon hashes of all recipient emails
     /// @param payloadContentHash Keccak256 hash of decrypted payload content
+    /// @param rewardToken Token address (address(0) for ETH)
+    /// @param rewardAmount Reward amount (ignored for ETH - uses msg.value)
     /// @return index The index of the newly added message
     function addMessageWithReward(
         externalEuint256[] calldata limbs,
@@ -800,14 +818,16 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         string calldata publicMessage,
         string calldata cryptoScheme,
         bytes32[] calldata recipientEmailHashes,
-        bytes32 payloadContentHash
+        bytes32 payloadContentHash,
+        address rewardToken,
+        uint256 rewardAmount
     ) external payable returns (uint256 index) {
         return _addMessageWithReward(limbs, emailByteLen, encSkShare, payload, inputProof,
             publicMessage, cryptoScheme, new externalEuint256[](0), 0, "",
-            recipientEmailHashes, payloadContentHash);
+            recipientEmailHashes, payloadContentHash, rewardToken, rewardAmount);
     }
 
-    /// @notice Add a message with per-message reward and passphrase hint
+    /// @notice Add a message with ETH or ERC-20 reward and passphrase hint
     function addMessageWithReward(
         externalEuint256[] calldata limbs,
         uint32 emailByteLen,
@@ -820,11 +840,13 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         uint32 hintByteLen,
         bytes calldata hintInputProof,
         bytes32[] calldata recipientEmailHashes,
-        bytes32 payloadContentHash
+        bytes32 payloadContentHash,
+        address rewardToken,
+        uint256 rewardAmount
     ) external payable returns (uint256 index) {
         return _addMessageWithReward(limbs, emailByteLen, encSkShare, payload, inputProof,
             publicMessage, cryptoScheme, hintLimbs, hintByteLen, hintInputProof,
-            recipientEmailHashes, payloadContentHash);
+            recipientEmailHashes, payloadContentHash, rewardToken, rewardAmount);
     }
 
     function _addMessageWithReward(
@@ -839,40 +861,100 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         uint32 hintByteLen,
         bytes memory hintInputProof,
         bytes32[] calldata recipientEmailHashes,
-        bytes32 payloadContentHash
+        bytes32 payloadContentHash,
+        address rewardToken,
+        uint256 rewardAmount
     ) internal returns (uint256 index) {
         if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
         if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
 
-        User storage u = users[msg.sender];
-
-        // Add any sent ETH to user's deposit pool
-        if (msg.value > 0) {
-            u.deposit += msg.value;
-            emit DepositAdded(msg.sender, msg.value);
-        }
-
         index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
             hintLimbs, hintByteLen, hintInputProof);
 
-        // Calculate reward: BASE_REWARD + REWARD_PER_KB * payloadSizeKB, capped at deposit
-        uint256 payloadSizeKB = (payload.length + 1023) / 1024;
-        uint256 rewardAmount = BASE_REWARD + (payloadSizeKB * REWARD_PER_KB);
-        if (rewardAmount > u.deposit) {
-            rewardAmount = u.deposit;
-        }
-        if (rewardAmount == 0) revert MustIncludeReward();
-
-        // Store reward and verification data
-        Message storage m = u.messages[index];
-        m.reward = rewardAmount;
+        Message storage m = users[msg.sender].messages[index];
         m.recipientEmailHashes = recipientEmailHashes;
         m.payloadContentHash = payloadContentHash;
         m.provenRecipientsBitmap = 0;
 
-        // Deduct from deposit and track locked rewards
-        u.deposit -= rewardAmount;
-        lockedRewards[msg.sender] += rewardAmount;
+        if (rewardToken == address(0)) {
+            // ETH reward
+            if (msg.value == 0) revert MustIncludeReward();
+            m.rewardType = RewardType.Eth;
+            m.rewardToken = address(0);
+            m.reward = msg.value;
+            lockedTokenRewards[msg.sender][address(0)] += msg.value;
+        } else {
+            // ERC-20 reward
+            if (!allowedRewardTokens[rewardToken]) revert TokenNotAllowed();
+            if (rewardAmount == 0) revert MustIncludeReward();
+            m.rewardType = RewardType.Erc20;
+            m.rewardToken = rewardToken;
+            m.reward = rewardAmount;
+            lockedTokenRewards[msg.sender][rewardToken] += rewardAmount;
+            IERC20(rewardToken).safeTransferFrom(msg.sender, address(this), rewardAmount);
+        }
+    }
+
+    /// @notice Add a message with confidential ERC-20 reward (cUSDT/cUSDC)
+    /// @param limbs Encrypted email limbs
+    /// @param emailByteLen Original email byte length
+    /// @param encSkShare Encrypted secret key share
+    /// @param payload Encrypted message payload
+    /// @param inputProof FHE input proof
+    /// @param publicMessage Public message (optional)
+    /// @param cryptoScheme Encryption scheme descriptor
+    /// @param recipientEmailHashes Poseidon hashes of all recipient emails
+    /// @param payloadContentHash Keccak256 hash of decrypted payload content
+    /// @param cToken Confidential token contract address
+    /// @param encAmount FHE-encrypted reward amount
+    /// @param rewardInputProof FHE input proof for the reward amount
+    /// @return index The index of the newly added message
+    function addMessageWithConfidentialReward(
+        externalEuint256[] calldata limbs,
+        uint32 emailByteLen,
+        externalEuint128 encSkShare,
+        bytes calldata payload,
+        bytes calldata inputProof,
+        string calldata publicMessage,
+        string calldata cryptoScheme,
+        bytes32[] calldata recipientEmailHashes,
+        bytes32 payloadContentHash,
+        address cToken,
+        externalEuint64 encAmount,
+        bytes calldata rewardInputProof
+    ) external returns (uint256 index) {
+        if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
+        if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
+        if (!allowedRewardTokens[cToken]) revert TokenNotAllowed();
+
+        index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            new externalEuint256[](0), 0, "");
+
+        Message storage m = users[msg.sender].messages[index];
+        m.recipientEmailHashes = recipientEmailHashes;
+        m.payloadContentHash = payloadContentHash;
+        m.provenRecipientsBitmap = 0;
+
+        m.rewardType = RewardType.ConfidentialErc20;
+        m.rewardToken = cToken;
+
+        // Internalize the encrypted amount
+        euint64 amount = FHE.fromExternal(encAmount, rewardInputProof);
+        FHE.allowThis(amount);
+        m.encryptedRewardAmount = amount;
+
+        // Transfer confidential tokens to this contract
+        IConfidentialERC20(cToken).transferFrom(msg.sender, address(this), amount);
+
+        // Track locked confidential rewards
+        if (FHE.isInitialized(lockedConfidentialRewards[msg.sender][cToken])) {
+            lockedConfidentialRewards[msg.sender][cToken] = FHE.add(
+                lockedConfidentialRewards[msg.sender][cToken], amount
+            );
+        } else {
+            lockedConfidentialRewards[msg.sender][cToken] = amount;
+        }
+        FHE.allowThis(lockedConfidentialRewards[msg.sender][cToken]);
     }
 
     /// @notice Get the number of messages for a user
@@ -895,15 +977,39 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
         m.revoked = true;
 
-        // Return reward to user's deposit pool if one was attached
-        if (m.reward > 0) {
-            uint256 refund = m.reward;
-            m.reward = 0;
-            lockedRewards[msg.sender] -= refund;
-            users[msg.sender].deposit += refund;
-        }
+        // Refund reward based on type
+        _refundReward(m, msg.sender);
 
         emit MessageRevoked(msg.sender, index);
+    }
+
+    /// @notice Internal helper to refund reward from a message back to its owner
+    /// @param m The message storage reference
+    /// @param owner The owner to refund to
+    function _refundReward(Message storage m, address owner) internal {
+        if (m.rewardType == RewardType.Eth) {
+            uint256 refund = m.reward;
+            if (refund > 0) {
+                m.reward = 0;
+                lockedTokenRewards[owner][address(0)] -= refund;
+                (bool success, ) = payable(owner).call{value: refund}("");
+                if (!success) revert EthTransferFailed();
+            }
+        } else if (m.rewardType == RewardType.Erc20) {
+            uint256 refund = m.reward;
+            if (refund > 0) {
+                m.reward = 0;
+                lockedTokenRewards[owner][m.rewardToken] -= refund;
+                IERC20(m.rewardToken).safeTransfer(owner, refund);
+            }
+        } else if (m.rewardType == RewardType.ConfidentialErc20) {
+            if (FHE.isInitialized(m.encryptedRewardAmount)) {
+                euint64 refundAmt = m.encryptedRewardAmount;
+                m.encryptedRewardAmount = euint64.wrap(0);
+                // Note: lockedConfidentialRewards tracking is best-effort for FHE sums
+                IConfidentialERC20(m.rewardToken).transfer(owner, refundAmt);
+            }
+        }
     }
 
     /// @notice Edit a message (only owner, not deceased, not claimed, not revoked)
@@ -930,7 +1036,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         externalEuint256[] calldata hintLimbs,
         uint32 hintByteLen,
         bytes calldata hintInputProof
-    ) external onlyRegistered(msg.sender) {
+    ) external nonReentrant onlyRegistered(msg.sender) {
         User storage u = users[msg.sender];
         if (u.deceased) revert UserDeceased();
         if (!(index < u.messages.length)) revert InvalidIndex();
@@ -958,13 +1064,12 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
             _storeEncryptedHint(m.passphraseHint, hintLimbs, hintByteLen, hintInputProof);
         }
 
-        // Reset reward/proof fields if message had a reward attached
+        // Refund and reset reward/proof fields if message had a reward attached
         // (proof commitments no longer match the new content)
-        if (m.reward > 0) {
-            uint256 refund = m.reward;
-            m.reward = 0;
-            lockedRewards[msg.sender] -= refund;
-            users[msg.sender].deposit += refund;
+        if (m.rewardType != RewardType.None) {
+            _refundReward(m, msg.sender);
+            m.rewardType = RewardType.None;
+            m.rewardToken = address(0);
             delete m.recipientEmailHashes;
             m.payloadContentHash = bytes32(0);
             m.provenRecipientsBitmap = 0;
@@ -1023,13 +1128,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
 
     /// @notice Anyone may trigger delivery after user is deceased.
     /// @dev Emits data+email; mark delivered to prevent duplicates.
-    /// @dev NOTE: Re-claiming messages after the 24h exclusivity window is currently allowed.
-    ///      This is a known limitation that will be addressed with a proof-of-delivery mechanism.
-    ///      Once a claimer submits proof of message delivery after retrieve(), re-claiming should be prevented.
-    ///      This mechanism is not yet implemented and should be added in a future version.
-    /// @dev NOTE: Once FHE.allow() is called for a claimer, that permission persists.
-    ///      If multiple parties claim different messages from the same user, they all get decryption access.
-    ///      This may be intended behavior, but should be considered when designing the protocol.
     /// @param user The deceased user's address
     /// @param index The message index to claim
     function claim(address user, uint256 index) external nonReentrant {
@@ -1681,8 +1779,8 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @notice Get grace vote status for a user (plaintext mode)
     /// @dev For encrypted mode, use getEncryptedGraceVoteStatus instead
     /// @param user The user address
-    /// @return aliveVotes Number of alive votes (0 for encrypted mode — vote counts are secret)
-    /// @return deadVotes Number of dead votes (0 for encrypted mode — vote counts are secret)
+    /// @return aliveVotes Number of alive votes (0 for encrypted mode)
+    /// @return deadVotes Number of dead votes (0 for encrypted mode)
     /// @return decided Whether a decision has been reached
     /// @return decisionAlive The decision if decided (true=alive)
     function getGraceVoteStatus(
@@ -1700,7 +1798,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     /// @param user The user address
     /// @param member The council member address
     /// @return hasVoted Whether the member has voted (for encrypted mode: whether they attempted)
-    /// @return votedAlive How they voted (always false for encrypted mode — vote values are secret)
+    /// @return votedAlive How they voted (always false for encrypted mode)
     function getGraceVote(address user, address member) external view returns (bool hasVoted, bool votedAlive) {
         if (users[user].encryptedVoting) {
             EncryptedGraceVote storage evote = encryptedGraceVotes[user];
@@ -1750,55 +1848,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         return users[user].encryptedVoting;
     }
 
-    // --- Deposits and Rewards ---
-
-    /// @notice Deposit ETH to fund delivery costs
-    function deposit() external payable onlyRegistered(msg.sender) {
-        if (msg.value == 0) revert MustDepositSomething();
-
-        User storage u = users[msg.sender];
-        u.deposit += msg.value;
-
-        emit DepositAdded(msg.sender, msg.value);
-    }
-
-    /// @notice Withdraw unlocked ETH from deposit balance
-    /// @param amount The amount to withdraw in wei
-    function withdrawDeposit(uint256 amount) external nonReentrant onlyRegistered(msg.sender) {
-        User storage u = users[msg.sender];
-        if (amount > u.deposit) revert InsufficientDeposit();
-        u.deposit -= amount;
-        (bool success, ) = payable(msg.sender).call{value: amount}("");
-        if (!success) revert EthTransferFailed();
-    }
-
-    /// @notice Get user's deposit balance
-    /// @param user The user address
-    /// @return The user's deposit balance in wei
-    function getDeposit(address user) external view returns (uint256) {
-        return users[user].deposit;
-    }
-
-    /// @notice Calculate reward for a message
-    /// @param user The user address
-    /// @param messageIndex The message index
-    /// @return The calculated reward amount in wei
-    function calculateReward(address user, uint256 messageIndex) public view returns (uint256) {
-        User storage u = users[user];
-        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
-
-        Message storage m = u.messages[messageIndex];
-        uint256 payloadSizeKB = (m.payload.length + 1023) / 1024; // Round up to KB
-
-        uint256 reward = BASE_REWARD + (payloadSizeKB * REWARD_PER_KB);
-
-        // Cap reward at user's deposit
-        if (reward > u.deposit) {
-            reward = u.deposit;
-        }
-
-        return reward;
-    }
+    // --- Rewards ---
 
     /// @notice Check that all recipients in a message have been proven, revert if not
     /// @param m Storage reference to the message
@@ -1811,6 +1861,7 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
     }
 
     /// @notice Claim reward after ALL recipients have been proven via zk-email
+    /// @dev Routes by rewardType: ETH direct transfer, ERC-20 via SafeERC20, or confidential shielded transfer
     /// @param user The deceased user's address
     /// @param messageIndex The message index
     function claimReward(address user, uint256 messageIndex) external nonReentrant {
@@ -1821,7 +1872,6 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         Message storage m = u.messages[messageIndex];
         if (!m.claimed) revert MessageNotClaimed();
         if (m.claimedBy != msg.sender) revert NotClaimant();
-        if (m.reward == 0) revert NoReward();
 
         _assertAllRecipientsProven(m);
 
@@ -1830,14 +1880,106 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         if (rewardsClaimed[rewardKey]) revert AlreadyRewardClaimed();
         rewardsClaimed[rewardKey] = true;
 
-        uint256 reward = m.reward;
-        m.reward = 0;
-        lockedRewards[user] -= reward;
+        if (m.rewardType == RewardType.Eth) {
+            uint256 reward = m.reward;
+            if (reward == 0) revert NoReward();
+            m.reward = 0;
+            lockedTokenRewards[user][address(0)] -= reward;
 
-        (bool success, ) = payable(msg.sender).call{value: reward}("");
-        if (!success) revert EthTransferFailed();
+            (bool success, ) = payable(msg.sender).call{value: reward}("");
+            if (!success) revert EthTransferFailed();
 
-        emit RewardClaimed(user, messageIndex, msg.sender, reward);
+            emit RewardClaimed(user, messageIndex, msg.sender, reward);
+        } else if (m.rewardType == RewardType.Erc20) {
+            uint256 reward = m.reward;
+            if (reward == 0) revert NoReward();
+            m.reward = 0;
+            lockedTokenRewards[user][m.rewardToken] -= reward;
+
+            IERC20(m.rewardToken).safeTransfer(msg.sender, reward);
+
+            emit TokenRewardClaimed(user, messageIndex, msg.sender, m.rewardToken, reward);
+        } else if (m.rewardType == RewardType.ConfidentialErc20) {
+            if (!FHE.isInitialized(m.encryptedRewardAmount)) revert NoReward();
+            euint64 amount = m.encryptedRewardAmount;
+            m.encryptedRewardAmount = euint64.wrap(0);
+
+            // Shielded delivery: transfer confidential tokens directly
+            IConfidentialERC20(m.rewardToken).transfer(msg.sender, amount);
+
+            emit ConfidentialRewardClaimed(user, messageIndex, msg.sender, m.rewardToken, true);
+        } else {
+            revert NoReward();
+        }
+    }
+
+    /// @notice Claim confidential reward as plaintext tokens (step 1: request decryption)
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    function claimRewardUnshielded(address user, uint256 messageIndex) external nonReentrant {
+        User storage u = users[user];
+        if (!u.deceased) revert UserAlive();
+        if (!(messageIndex < u.messages.length)) revert InvalidIndex();
+
+        Message storage m = u.messages[messageIndex];
+        if (!m.claimed) revert MessageNotClaimed();
+        if (m.claimedBy != msg.sender) revert NotClaimant();
+        if (m.rewardType != RewardType.ConfidentialErc20) revert InvalidRewardType();
+        if (!FHE.isInitialized(m.encryptedRewardAmount)) revert NoReward();
+
+        _assertAllRecipientsProven(m);
+
+        bytes32 rewardKey = keccak256(abi.encode(user, messageIndex));
+        if (rewardsClaimed[rewardKey]) revert AlreadyRewardClaimed();
+        rewardsClaimed[rewardKey] = true;
+
+        // Mark encrypted amount for public decryption
+        euint64 amount = m.encryptedRewardAmount;
+        m.encryptedRewardAmount = euint64.wrap(0);
+        euint64 decryptableAmount = FHE.makePubliclyDecryptable(amount);
+        FHE.allowThis(decryptableAmount);
+
+        bytes32 claimKey = keccak256(abi.encode(user, messageIndex, msg.sender));
+        pendingUnshieldedClaims[claimKey] = PendingUnshieldedClaim({
+            claimer: msg.sender,
+            cToken: m.rewardToken,
+            encAmount: decryptableAmount,
+            decryptionRequested: true,
+            executed: false
+        });
+    }
+
+    /// @notice Execute unshielded claim after KMS decryption (step 2)
+    /// @param user The deceased user's address
+    /// @param messageIndex The message index
+    /// @param decryptedAmount The plaintext reward amount
+    /// @param decryptionProof The KMS proof of correct decryption
+    function executeUnshieldedClaim(
+        address user,
+        uint256 messageIndex,
+        uint64 decryptedAmount,
+        bytes calldata decryptionProof
+    ) external nonReentrant {
+        bytes32 claimKey = keccak256(abi.encode(user, messageIndex, msg.sender));
+        PendingUnshieldedClaim storage pending = pendingUnshieldedClaims[claimKey];
+
+        if (!pending.decryptionRequested) revert DecryptionNotRequested();
+        if (pending.executed) revert AlreadyRewardClaimed();
+        if (pending.claimer != msg.sender) revert NotClaimant();
+
+        // Verify KMS signatures
+        bytes32[] memory handlesList = new bytes32[](1);
+        handlesList[0] = euint64.unwrap(pending.encAmount);
+        bytes memory abiEncodedCleartexts = abi.encode(decryptedAmount);
+        FHE.checkSignatures(handlesList, abiEncodedCleartexts, decryptionProof);
+
+        pending.executed = true;
+
+        // Get underlying token from confidential wrapper
+        address underlying = IConfidentialERC20(pending.cToken).underlying();
+        IERC20(underlying).safeTransfer(msg.sender, uint256(decryptedAmount));
+
+        emit ConfidentialRewardClaimed(user, messageIndex, msg.sender, pending.cToken, false);
     }
 
     // --- Admin Functions ---
@@ -1858,26 +2000,43 @@ contract Farewell is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reentra
         emit DkimKeyUpdated(domain, pubkeyHash, trusted);
     }
 
+    /// @notice Whitelist or delist a reward token
+    /// @param token The token address (ERC-20 or confidential ERC-20)
+    /// @param allowed Whether the token is allowed as a reward
+    function setAllowedRewardToken(address token, bool allowed) external onlyOwner {
+        allowedRewardTokens[token] = allowed;
+        emit RewardTokenWhitelisted(token, allowed);
+    }
+
     /// @notice Get message reward information
     /// @param user The user's address
     /// @param messageIndex The message index
-    /// @return reward The per-message ETH reward amount
+    /// @return reward The per-message reward amount (0 for confidential)
     /// @return numRecipients The number of recipients for proof verification
     /// @return provenRecipientsBitmap Bitmap of which recipients have been proven
     /// @return payloadContentHash Keccak256 hash of the decrypted payload content
+    /// @return rewardToken The reward token address (address(0) for ETH)
+    /// @return rewardType The type of reward
     function getMessageRewardInfo(
         address user,
         uint256 messageIndex
     )
         external
         view
-        returns (uint256 reward, uint256 numRecipients, uint256 provenRecipientsBitmap, bytes32 payloadContentHash)
+        returns (
+            uint256 reward,
+            uint256 numRecipients,
+            uint256 provenRecipientsBitmap,
+            bytes32 payloadContentHash,
+            address rewardToken,
+            RewardType rewardType
+        )
     {
         User storage u = users[user];
         if (!(messageIndex < u.messages.length)) revert InvalidIndex();
 
         Message storage m = u.messages[messageIndex];
-        return (m.reward, m.recipientEmailHashes.length, m.provenRecipientsBitmap, m.payloadContentHash);
+        return (m.reward, m.recipientEmailHashes.length, m.provenRecipientsBitmap, m.payloadContentHash, m.rewardToken, m.rewardType);
     }
 
     /// @notice Get recipient email hash at a specific index
