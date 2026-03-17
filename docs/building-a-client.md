@@ -37,7 +37,7 @@ Note: The npm package is `fhevmjs` (from Zama), not `@fhenixprotocol/fhevmjs`.
 
 | Network         | Chain ID | Contract Address                             |
 | --------------- | -------- | -------------------------------------------- |
-| Sepolia         | 11155111 | `0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3` |
+| Sepolia         | 11155111 | `0x9b814A92c47619b3f884C90A126Ac8E3fc32f42f` |
 | Hardhat (Local) | 31337    | Varies per deployment                        |
 
 ### Loading the ABI
@@ -90,7 +90,7 @@ import { ethers, BrowserProvider, Contract } from "ethers";
 import FarewellArtifact from "../artifacts/contracts/Farewell.sol/Farewell.json";
 
 const FAREWELL_ADDRESSES: Record<number, string> = {
-  11155111: "0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3", // Sepolia
+  11155111: "0x9b814A92c47619b3f884C90A126Ac8E3fc32f42f", // Sepolia
   // 31337: '0x...', // Hardhat (varies per deployment)
 };
 
