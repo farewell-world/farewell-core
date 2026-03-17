@@ -1,5 +1,5 @@
 import { FhevmType } from "@fhevm/hardhat-plugin";
-import { Farewell, Farewell__factory } from "../types";
+import { Farewell, Farewell__factory, FarewellExtension, FarewellExtension__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers, fhevm } from "hardhat";
@@ -10,12 +10,39 @@ type Signers = {
   bob: HardhatEthersSigner;
 };
 
+// Combined type: Farewell (core) + FarewellExtension methods, all at the same address
+type FarewellFull = Farewell & FarewellExtension;
+
 async function deployFixture() {
   const [owner] = await ethers.getSigners();
+
+  // Deploy FarewellExtension first (extension contract for council, rewards, ZK proofs, etc.)
+  const FarewellExtensionFactory = await ethers.getContractFactory("FarewellExtension");
+  const FarewellExtensionContract = await FarewellExtensionFactory.deploy(owner.address);
+  await FarewellExtensionContract.waitForDeployment();
+  const extensionAddress = await FarewellExtensionContract.getAddress();
+
+  // Deploy Farewell core with extension address
   const FarewellFactory = await ethers.getContractFactory("Farewell");
-  const FarewellContract = await FarewellFactory.deploy(owner.address) as unknown as Farewell;
-  await FarewellContract.waitForDeployment();
-  const FarewellContractAddress = await FarewellContract.getAddress();
+  const farewellCore = await FarewellFactory.deploy(owner.address, extensionAddress);
+  await farewellCore.waitForDeployment();
+  const FarewellContractAddress = await farewellCore.getAddress();
+
+  // Attach combined ABI (core + extension) at the Farewell address for typed access.
+  // Filter out constructor and any items already present in the core ABI to avoid duplicates.
+  const combinedAbi = [
+    ...Farewell__factory.abi,
+    ...FarewellExtension__factory.abi.filter(
+      (extItem) =>
+        extItem.type !== "constructor" &&
+        !Farewell__factory.abi.some(
+          (coreItem) =>
+            "name" in coreItem && "name" in extItem && coreItem.name === extItem.name
+        )
+    ),
+  ];
+  const FarewellContract = new ethers.Contract(FarewellContractAddress, combinedAbi, owner) as unknown as FarewellFull;
+
   return { FarewellContract, FarewellContractAddress };
 }
 
@@ -81,7 +108,7 @@ const emailWords2 = chunk32ToU256Words(emailBytes2);
 
 describe("Farewell", function () {
   let signers: Signers;
-  let FarewellContract: Farewell;
+  let FarewellContract: FarewellFull;
   let FarewellContractAddress: string;
 
   before(async function () {
