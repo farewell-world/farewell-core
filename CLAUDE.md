@@ -219,8 +219,7 @@ npx hardhat verify --network sepolia <address>
 The contract uses OpenZeppelin's UUPS proxy pattern. The upgrade workflow:
 
 ```bash
-PROXY_ADDRESS=0x3997c9dD0eAEE743F6f94754fD161c3E9d0596B3 \
-  npx hardhat run scripts/upgrade-farewell.ts --network sepolia
+npx hardhat deploy --network sepolia
 ```
 
 **CRITICAL: `.openzeppelin/sepolia.json` must always be committed.** This manifest tracks proxy-to-implementation mappings and storage layouts. Without it, `upgrades.upgradeProxy()` refuses to run — and more importantly, it cannot validate storage layout compatibility between old and new implementations. A bad storage layout change on mainnet would silently corrupt all user data with no recovery path.
