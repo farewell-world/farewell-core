@@ -218,6 +218,7 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     error NoVotesCast();
     error TokenNotAllowed();
     error InvalidRewardType();
+    error NotAlive();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;

@@ -143,6 +143,64 @@ contract Farewell is FarewellStorage {
         emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
     }
 
+    /// @notice Update the user's check-in period (only callable while alive or finalAlive)
+    /// @param newCheckInPeriod New check-in period in seconds (min 1 day)
+    function setCheckInPeriod(uint64 newCheckInPeriod) external onlyRegistered(msg.sender) {
+        if (!(newCheckInPeriod > 1 days - 1)) revert CheckInPeriodTooShort();
+        User storage u = users[msg.sender];
+        if (u.deceased) revert UserDeceased();
+
+        // Allow finalAlive users; block grace/deceased
+        if (!u.finalAlive) {
+            uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+            if (block.timestamp > checkInEnd) revert NotAlive();
+        }
+
+        // Reset vote state and lastCheckIn (same as ping)
+        if (u.finalAlive) {
+            u.finalAlive = false;
+            if (u.encryptedVoting) {
+                _resetEncryptedGraceVote(msg.sender);
+            } else {
+                _resetGraceVote(msg.sender);
+            }
+        }
+
+        u.checkInPeriod = newCheckInPeriod;
+        u.lastCheckIn = uint64(block.timestamp);
+        emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
+        emit Ping(msg.sender, u.lastCheckIn);
+    }
+
+    /// @notice Update the user's grace period (only callable while alive or finalAlive)
+    /// @param newGracePeriod New grace period in seconds (min 1 day)
+    function setGracePeriod(uint64 newGracePeriod) external onlyRegistered(msg.sender) {
+        if (!(newGracePeriod > 1 days - 1)) revert GracePeriodTooShort();
+        User storage u = users[msg.sender];
+        if (u.deceased) revert UserDeceased();
+
+        // Allow finalAlive users; block grace/deceased
+        if (!u.finalAlive) {
+            uint256 checkInEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod);
+            if (block.timestamp > checkInEnd) revert NotAlive();
+        }
+
+        // Reset vote state and lastCheckIn (same as ping)
+        if (u.finalAlive) {
+            u.finalAlive = false;
+            if (u.encryptedVoting) {
+                _resetEncryptedGraceVote(msg.sender);
+            } else {
+                _resetGraceVote(msg.sender);
+            }
+        }
+
+        u.gracePeriod = newGracePeriod;
+        u.lastCheckIn = uint64(block.timestamp);
+        emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
+        emit Ping(msg.sender, u.lastCheckIn);
+    }
+
     /// @notice Get the registration timestamp of a user
     /// @param user The user's address
     /// @return The registration timestamp
