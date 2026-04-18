@@ -214,24 +214,6 @@ npx hardhat deploy --network sepolia
 npx hardhat verify --network sepolia <address>
 ```
 
-### Deployment credentials (MNEMONIC, INFURA_API_KEY)
-
-Deploy and owner-only calls read credentials from Hardhat's encrypted vars
-store (**not** from a `.env` file). `hardhat.config.ts:16` pulls them via
-`vars.get("MNEMONIC", …)`.
-
-```bash
-npx hardhat vars list           # show available keys
-npx hardhat vars get MNEMONIC   # print the current mnemonic
-npx hardhat vars set MNEMONIC   # rotate / replace
-```
-
-Storage: `~/.config/hardhat-nodejs/vars.json` (encrypted).
-
-The mnemonic's `accounts[0]` is the **contract owner**. It's authoritative
-for every `onlyOwner` call — `setZkEmailVerifier`, `setTrustedDkimKey`,
-`setAllowedRewardToken`, etc.
-
 ### Upgrading (UUPS Proxy)
 
 The contract uses OpenZeppelin's UUPS proxy pattern. The upgrade workflow:
