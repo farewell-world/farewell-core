@@ -1,0 +1,12 @@
+[
+  { "domain": "gmail.com",      "selector": "20230601",  "status": "active" },
+  { "domain": "gmail.com",      "selector": "20221208",  "status": "previous" },
+  { "domain": "outlook.com",    "selector": "selector1", "status": "active" },
+  { "domain": "outlook.com",    "selector": "selector2", "status": "active" },
+  { "domain": "yahoo.com",      "selector": "s2048",     "status": "active" },
+  { "domain": "icloud.com",     "selector": "1a1hai",    "status": "active" },
+  { "domain": "hotmail.com",    "selector": "selector1", "status": "active" },
+  { "domain": "hotmail.com",    "selector": "selector2", "status": "active" },
+  { "domain": "protonmail.com", "selector": "protonmail3", "status": "active" },
+  { "domain": "proton.me",      "selector": "protonmail3", "status": "active" }
+]
