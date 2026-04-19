@@ -16,17 +16,25 @@ encrypted messages using Fully Homomorphic Encryption (FHE) on Ethereum.
 ```
 farewell-core/
 ├── contracts/
-│   └── Farewell.sol          # Main contract with all protocol logic
-├── deploy/                    # Deployment scripts
+│   ├── Farewell.sol              # Main contract with all protocol logic
+│   ├── FarewellStorage.sol       # Shared storage layout (structs, mappings, events)
+│   ├── FarewellExtension.sol     # Council, voting, rewards, ZK proofs (delegatecall)
+│   └── test/
+│       ├── FarewellTestMode.sol  # Test-only contract for arbitrary user state setup
+│       ├── MockERC20.sol         # Mock ERC-20 for reward testing
+│       └── MockGroth16Verifier.sol # Always-true verifier for ZK proof testing
+├── deploy/                        # Deployment scripts
 ├── docs/
-│   ├── protocol.md           # Full protocol specification (lifecycle, encryption, FHE, council, rewards)
-│   ├── contract-api.md       # Complete API reference (functions, events, errors, constants)
-│   ├── building-a-client.md  # Guide with TypeScript examples for building alternative clients
-│   ├── proof-structure.md    # Delivery proof architecture & zk-email verification spec
-│   ├── discoverability.md   # Opt-in discoverable users list for claimers
-│   └── council-system.md    # Council voting system (plaintext & encrypted modes)
-├── test/                      # Hardhat tests
-├── hardhat.config.ts          # Hardhat configuration
+│   ├── protocol.md               # Full protocol specification
+│   ├── contract-api.md           # Complete API reference
+│   ├── building-a-client.md      # Guide for building alternative clients
+│   ├── proof-structure.md        # Delivery proof architecture & zk-email spec
+│   ├── discoverability.md        # Opt-in discoverable users list
+│   └── council-system.md         # Council voting system
+├── test/
+│   ├── Farewell.ts               # Core contract tests
+│   └── FarewellTestMode.ts       # Test mode scenario tests
+├── hardhat.config.ts
 ├── package.json
 └── README.md
 ```
@@ -202,10 +210,40 @@ The contract uses Zama's FHEVM for encrypted data:
 ### Testing
 
 ```bash
-npx hardhat test                    # Run all tests
-npx hardhat test --grep "register"  # Run specific tests
-npx hardhat coverage                # Generate coverage report
+npx hardhat test                              # Run all tests
+npx hardhat test test/FarewellTestMode.ts     # Run test mode scenario tests only
+npx hardhat test --grep "register"            # Run specific tests
+npx hardhat coverage                          # Generate coverage report
 ```
+
+### Test Mode (`FarewellTestMode.sol`)
+
+**WARNING: Sepolia / Hardhat only. NEVER deploy to mainnet.**
+
+`FarewellTestMode` inherits from `Farewell` and adds `onlyOwner` functions that directly write to storage, allowing users to be placed in any lifecycle state without waiting for real time to pass. The constructor hard-reverts on any chain that is not Sepolia (11155111) or Hardhat (31337).
+
+**Functions:**
+- `setupTestUser(user, name, checkInPeriod, gracePeriod, backdateSeconds)` — Register a user with backdated `lastCheckIn`. Use `backdateSeconds` to control state: 0 = alive, `checkIn + grace/2` = in grace, `checkIn + grace + buffer` = past grace.
+- `setupTestCouncil(user, members[])` — Add council members bypassing grace-period freeze.
+- `forceMarkDeceased(user, notifier)` — Set `deceased=true` without time checks.
+- `forceSetFinalAlive(user)` — Set `finalAlive=true` without voting.
+
+**Pre-configured test users** (in `test/FarewellTestMode.ts`):
+
+| Signer | Name | State | Purpose |
+|--------|------|-------|---------|
+| [1] | Alice | Past grace, not marked | Test `markDeceased` eligibility |
+| [2] | Bob | In grace, 3 council | Council saves (votes alive → FinalAlive) |
+| [3] | Charlie | In grace, 3 council | Council kills (votes dead → Deceased) |
+| [4] | Dave | Already deceased | Test deceased restrictions |
+| [5] | Elias | Alive | Test normal alive operations |
+| [6] | Fiona | In grace, no council | Test raw grace state and expiry |
+
+**Deployment:**
+```bash
+npx hardhat deploy --tags FarewellTestMode --network sepolia
+```
+The deploy script (`deploy/06_deploy_testmode.ts`) skips mainnet automatically.
 
 ### Deployment
 
