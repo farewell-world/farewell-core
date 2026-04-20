@@ -43,31 +43,49 @@ contract Farewell is FarewellStorage {
 
     // --- User lifecycle ---
 
-    /// @notice Internal registration logic for new and existing users
-    /// @param name Optional display name (max 100 bytes)
-    /// @param checkInPeriod Check-in period in seconds (min 1 day)
-    /// @param gracePeriod Grace period in seconds (min 1 day)
-    /// @param encryptedVoting Whether council votes should use FHE encryption
-    function _register(string memory name, uint64 checkInPeriod, uint64 gracePeriod, bool encryptedVoting) internal {
+    /// @notice Store FHE-encrypted name limbs and grant access to the caller
+    function _storeEncryptedName(
+        EncryptedString storage nameField,
+        externalEuint256[] calldata nameLimbs,
+        uint32 nameByteLen,
+        bytes calldata nameInputProof
+    ) internal {
+        nameField.limbs = new euint256[](nameLimbs.length);
+        for (uint256 i = 0; i < nameLimbs.length; ) {
+            euint256 v = FHE.fromExternal(nameLimbs[i], nameInputProof);
+            nameField.limbs[i] = v;
+            FHE.allowThis(v);
+            FHE.allow(v, msg.sender);
+            unchecked { ++i; }
+        }
+        nameField.byteLen = nameByteLen;
+    }
+
+    /// @notice Grant FHE decryption access on a user's encrypted name limbs
+    function _allowNameLimbs(address user, address allowee) internal {
+        EncryptedString storage enc = users[user].encryptedName;
+        for (uint256 i = 0; i < enc.limbs.length; ) {
+            FHE.allow(enc.limbs[i], allowee);
+            unchecked { ++i; }
+        }
+    }
+
+    /// @notice Internal registration logic (no name)
+    function _registerNoName(uint64 checkInPeriod, uint64 gracePeriod, bool encryptedVoting) internal {
         if (!(checkInPeriod > 1 days - 1)) revert CheckInPeriodTooShort();
         if (!(gracePeriod > 1 days - 1)) revert GracePeriodTooShort();
-        if (!(bytes(name).length < 101)) revert NameTooLong();
 
         User storage u = users[msg.sender];
 
         if (u.lastCheckIn != 0) {
-            // user is already registered, update configs
             if (u.deceased) revert UserDeceased();
             uint256 graceEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
             if (!(block.timestamp < graceEnd + 1)) revert CheckInExpired();
-            u.name = name;
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
             u.encryptedVoting = encryptedVoting;
             emit UserUpdated(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         } else {
-            // new user
-            u.name = name;
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
             u.lastCheckIn = uint64(block.timestamp);
@@ -81,39 +99,91 @@ contract Farewell is FarewellStorage {
         emit Ping(msg.sender, u.lastCheckIn);
     }
 
-    /// @notice Register with a name, custom periods, and encrypted voting preference
-    /// @param name Optional display name (max 100 bytes)
-    /// @param checkInPeriod Check-in period in seconds (min 1 day)
-    /// @param gracePeriod Grace period in seconds (min 1 day)
-    /// @param encryptedVoting Whether council votes should use FHE encryption
-    function register(string calldata name, uint64 checkInPeriod, uint64 gracePeriod, bool encryptedVoting) external {
-        _register(name, checkInPeriod, gracePeriod, encryptedVoting);
+    /// @notice Internal registration logic with encrypted name
+    function _registerWithName(
+        externalEuint256[] calldata nameLimbs,
+        uint32 nameByteLen,
+        bytes calldata nameInputProof,
+        uint64 checkInPeriod,
+        uint64 gracePeriod,
+        bool encryptedVoting
+    ) internal {
+        if (!(checkInPeriod > 1 days - 1)) revert CheckInPeriodTooShort();
+        if (!(gracePeriod > 1 days - 1)) revert GracePeriodTooShort();
+        if (nameByteLen > MAX_NAME_BYTE_LEN) revert NameTooLong();
+        if (nameLimbs.length != (uint256(MAX_NAME_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
+
+        User storage u = users[msg.sender];
+
+        if (u.lastCheckIn != 0) {
+            if (u.deceased) revert UserDeceased();
+            uint256 graceEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
+            if (!(block.timestamp < graceEnd + 1)) revert CheckInExpired();
+            _storeEncryptedName(u.encryptedName, nameLimbs, nameByteLen, nameInputProof);
+            u.checkInPeriod = checkInPeriod;
+            u.gracePeriod = gracePeriod;
+            u.encryptedVoting = encryptedVoting;
+            emit UserUpdated(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
+        } else {
+            _storeEncryptedName(u.encryptedName, nameLimbs, nameByteLen, nameInputProof);
+            u.checkInPeriod = checkInPeriod;
+            u.gracePeriod = gracePeriod;
+            u.lastCheckIn = uint64(block.timestamp);
+            u.registeredOn = uint64(block.timestamp);
+            u.deceased = false;
+            u.encryptedVoting = encryptedVoting;
+            ++totalUsers;
+            emit UserRegistered(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
+        }
+
+        emit Ping(msg.sender, u.lastCheckIn);
     }
 
-    /// @notice Register with a name and custom check-in and grace periods (encrypted voting defaults to true)
-    /// @param name Optional display name (max 100 bytes)
-    /// @param checkInPeriod Check-in period in seconds (min 1 day)
-    /// @param gracePeriod Grace period in seconds (min 1 day)
-    function register(string calldata name, uint64 checkInPeriod, uint64 gracePeriod) external {
-        _register(name, checkInPeriod, gracePeriod, true);
+    /// @notice Register with an encrypted name, custom periods, and encrypted voting preference
+    function register(
+        externalEuint256[] calldata nameLimbs,
+        uint32 nameByteLen,
+        bytes calldata nameInputProof,
+        uint64 checkInPeriod,
+        uint64 gracePeriod,
+        bool encryptedVoting
+    ) external {
+        _registerWithName(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod, encryptedVoting);
+    }
+
+    /// @notice Register with an encrypted name and custom periods (encrypted voting defaults to true)
+    function register(
+        externalEuint256[] calldata nameLimbs,
+        uint32 nameByteLen,
+        bytes calldata nameInputProof,
+        uint64 checkInPeriod,
+        uint64 gracePeriod
+    ) external {
+        _registerWithName(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod, true);
     }
 
     /// @notice Register with custom check-in and grace periods and no name (encrypted voting defaults to true)
-    /// @param checkInPeriod Check-in period in seconds (min 1 day)
-    /// @param gracePeriod Grace period in seconds (min 1 day)
     function register(uint64 checkInPeriod, uint64 gracePeriod) external {
-        _register("", checkInPeriod, gracePeriod, true);
+        _registerNoName(checkInPeriod, gracePeriod, true);
     }
 
-    /// @notice Register with a name and default check-in and grace periods (encrypted voting defaults to true)
-    /// @param name Optional display name (max 100 bytes)
-    function register(string calldata name) external {
-        _register(name, DEFAULT_CHECKIN, DEFAULT_GRACE, true);
+    /// @notice Register with custom periods, explicit voting preference, and no name
+    function register(uint64 checkInPeriod, uint64 gracePeriod, bool encryptedVoting) external {
+        _registerNoName(checkInPeriod, gracePeriod, encryptedVoting);
+    }
+
+    /// @notice Register with an encrypted name and default periods (encrypted voting defaults to true)
+    function register(
+        externalEuint256[] calldata nameLimbs,
+        uint32 nameByteLen,
+        bytes calldata nameInputProof
+    ) external {
+        _registerWithName(nameLimbs, nameByteLen, nameInputProof, DEFAULT_CHECKIN, DEFAULT_GRACE, true);
     }
 
     /// @notice Register with default check-in and grace periods and no name (encrypted voting defaults to true)
     function register() external {
-        _register("", DEFAULT_CHECKIN, DEFAULT_GRACE, true);
+        _registerNoName(DEFAULT_CHECKIN, DEFAULT_GRACE, true);
     }
 
     /// @notice Check if an address is registered
@@ -123,23 +193,31 @@ contract Farewell is FarewellStorage {
         return users[user].lastCheckIn != 0;
     }
 
-    /// @notice Get the display name of a registered user
-    /// @param user The user's address
-    /// @return The user's display name
-    function getUserName(address user) external view returns (string memory) {
+    /// @notice Get the encrypted name handles and byte length of a registered user
+    function getEncryptedName(address user) external view returns (euint256[] memory nameLimbs, uint32 nameByteLen) {
         User storage u = users[user];
         if (u.lastCheckIn == 0) revert NotRegistered();
-        return u.name;
+        return (u.encryptedName.limbs, u.encryptedName.byteLen);
     }
 
-    /// @notice Update the user's display name
-    /// @param newName The new display name (max 100 bytes)
-    function setName(string calldata newName) external {
+    /// @notice Update the user's encrypted display name
+    function setEncryptedName(
+        externalEuint256[] calldata nameLimbs,
+        uint32 nameByteLen,
+        bytes calldata nameInputProof
+    ) external {
         User storage u = users[msg.sender];
         if (u.lastCheckIn == 0) revert NotRegistered();
         if (u.deceased) revert UserDeceased();
-        if (!(bytes(newName).length < 101)) revert NameTooLong();
-        u.name = newName;
+        if (nameByteLen > MAX_NAME_BYTE_LEN) revert NameTooLong();
+        if (nameLimbs.length != (uint256(MAX_NAME_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
+        _storeEncryptedName(u.encryptedName, nameLimbs, nameByteLen, nameInputProof);
+        // Re-allow all existing council members to decrypt the new name
+        CouncilMember[] storage council = councils[msg.sender];
+        for (uint256 i = 0; i < council.length; ) {
+            _allowNameLimbs(msg.sender, council[i].member);
+            unchecked { ++i; }
+        }
         emit UserUpdated(msg.sender, u.checkInPeriod, u.gracePeriod, u.registeredOn);
     }
 
@@ -866,22 +944,14 @@ contract Farewell is FarewellStorage {
             }
         }
 
+        // Allow claimer to decrypt sender's encrypted name
+        _allowNameLimbs(user, claimerAddress);
+
         emit Claimed(user, index, claimerAddress);
     }
 
     /// @notice Retrieve message data (encrypted handles are returned but can only be decrypted
     ///         by authorized parties via FHE.allow() permissions)
-    /// @param owner The address of the message owner
-    /// @param index The index of the message to retrieve
-    /// @return skShare The encrypted secret key share handle
-    /// @return encodedRecipientEmail The encrypted recipient email limbs
-    /// @return emailByteLen The original email byte length
-    /// @return payload The AES-encrypted message payload
-    /// @return publicMessage The optional cleartext public message
-    /// @return hash The hash of all message inputs
-    /// @return cryptoScheme The encryption scheme descriptor
-    /// @return hintLimbs The encrypted passphrase hint limbs
-    /// @return hintByteLen The original hint byte length
     function retrieve(
         address owner,
         uint256 index
@@ -897,7 +967,9 @@ contract Farewell is FarewellStorage {
             bytes32 hash,
             string memory cryptoScheme,
             euint256[] memory hintLimbs,
-            uint32 hintByteLen
+            uint32 hintByteLen,
+            euint256[] memory nameLimbs,
+            uint32 nameByteLen
         )
     {
         User storage u = users[owner];
@@ -916,7 +988,7 @@ contract Farewell is FarewellStorage {
         }
 
         skShare = m._skShare;
-        encodedRecipientEmail = m.recipientEmail.limbs; // copies to memory
+        encodedRecipientEmail = m.recipientEmail.limbs;
         emailByteLen = m.recipientEmail.byteLen;
         payload = m.payload;
         publicMessage = m.publicMessage;
@@ -924,6 +996,8 @@ contract Farewell is FarewellStorage {
         cryptoScheme = m.cryptoScheme;
         hintLimbs = m.passphraseHint.limbs;
         hintByteLen = m.passphraseHint.byteLen;
+        nameLimbs = u.encryptedName.limbs;
+        nameByteLen = u.encryptedName.byteLen;
     }
 
     // --- Fallback: delegate unknown calls to extension ---
