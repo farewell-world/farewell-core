@@ -90,6 +90,7 @@ The contract is upgradeable using UUPS pattern and manages:
 ```solidity
 uint64 constant DEFAULT_CHECKIN = 30 days;
 uint64 constant DEFAULT_GRACE = 7 days;
+uint32 constant MAX_NAME_BYTE_LEN = 128;
 uint32 constant MAX_EMAIL_BYTE_LEN = 224;
 uint32 constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
 uint256 constant BASE_REWARD = 0.01 ether;
@@ -111,8 +112,8 @@ enum UserStatus {
 
 ### User Lifecycle
 
-- `register(name, checkInPeriod, gracePeriod)` - Register with custom periods
-- `register(name)` - Register with defaults
+- `register(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod)` - Register with encrypted name and custom periods
+- `register(nameLimbs, nameByteLen, nameInputProof)` - Register with encrypted name and defaults
 - `ping()` - Reset check-in timer
 - `markDeceased(user)` - Mark user as deceased after timeout
 - `getUserState(user)` - Get current status and grace time remaining
@@ -223,7 +224,7 @@ npx hardhat coverage                          # Generate coverage report
 `FarewellTestMode` inherits from `Farewell` and adds `onlyOwner` functions that directly write to storage, allowing users to be placed in any lifecycle state without waiting for real time to pass. The constructor hard-reverts on any chain that is not Sepolia (11155111) or Hardhat (31337).
 
 **Functions:**
-- `setupTestUser(user, name, checkInPeriod, gracePeriod, backdateSeconds)` — Register a user with backdated `lastCheckIn`. Use `backdateSeconds` to control state: 0 = alive, `checkIn + grace/2` = in grace, `checkIn + grace + buffer` = past grace.
+- `setupTestUser(user, checkInPeriod, gracePeriod, backdateSeconds)` — Register a user with backdated `lastCheckIn`. Use `backdateSeconds` to control state: 0 = alive, `checkIn + grace/2` = in grace, `checkIn + grace + buffer` = past grace.
 - `setupTestCouncil(user, members[])` — Add council members bypassing grace-period freeze.
 - `forceMarkDeceased(user, notifier)` — Set `deceased=true` without time checks.
 - `forceSetFinalAlive(user)` — Set `finalAlive=true` without voting.
@@ -243,7 +244,7 @@ npx hardhat coverage                          # Generate coverage report
 ```bash
 npx hardhat deploy --tags FarewellTestMode --network sepolia
 ```
-The deploy script (`deploy/06_deploy_testmode.ts`) skips mainnet automatically.
+The deploy script (`deploy/06_deploy_testmode.ts`) skips mainnet automatically. The main Farewell contract is deployed via `deploy/07_deploy_farewell_v5.ts`.
 
 ### Deployment
 

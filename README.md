@@ -67,7 +67,7 @@ npx hardhat deploy --network sepolia
 
 | Network | Chain ID | Contract Address                             |
 | ------- | -------- | -------------------------------------------- |
-| Sepolia | 11155111 | `0x9b814A92c47619b3f884C90A126Ac8E3fc32f42f` |
+| Sepolia | 11155111 | `0xE494835ffd293E57655e61Ed854CA7a39130174e` |
 | Hardhat | 31337    | Local deployment (varies)                    |
 
 ---
@@ -78,12 +78,12 @@ npx hardhat deploy --network sepolia
 
 | Function                                     | Description                         |
 | -------------------------------------------- | ----------------------------------- |
-| `register(name, checkInPeriod, gracePeriod)` | Register or update settings         |
-| `register(name)`                             | Register with defaults (30d / 7d)   |
+| `register(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod)` | Register with encrypted name and custom periods |
+| `register(nameLimbs, nameByteLen, nameInputProof)` | Register with encrypted name and defaults (30d / 7d) |
 | `ping()`                                     | Reset check-in timer                |
 | `markDeceased(user)`                         | Mark user deceased after timeout    |
 | `getUserState(user)`                         | Get status and grace time remaining |
-| `setName(newName)`                           | Update display name                 |
+| `setEncryptedName(nameLimbs, nameByteLen, nameInputProof)` | Update encrypted display name |
 
 ### Messages
 

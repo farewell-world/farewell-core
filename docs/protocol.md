@@ -99,7 +99,9 @@ Users register once with customizable check-in and grace periods:
 
 ```solidity
 function register(
-    string calldata name,
+    bytes32[] calldata nameLimbs,
+    uint32 nameByteLen,
+    bytes calldata nameInputProof,
     uint64 checkInPeriod,
     uint64 gracePeriod
 ) external
@@ -107,7 +109,9 @@ function register(
 
 Parameters:
 
-- `name`: Display name (max 100 bytes)
+- `nameLimbs`: FHE-encrypted display name split into 32-byte limbs (4 limbs for 128 bytes)
+- `nameByteLen`: Original name length before padding (max 128 bytes)
+- `nameInputProof`: FHE input proof for name encryption
 - `checkInPeriod`: Minimum time between pings (min 1 day, max ~50 years)
 - `gracePeriod`: Time for council voting after timeout (min 1 day, max ~50 years)
 
@@ -408,6 +412,10 @@ Effects:
   for (uint i = 0; i < 7; i++) {
     FHE.allow(messages[user][index].encRecipientEmail[i], msg.sender);
   }
+  // Also grants access to sender's encrypted name limbs
+  for (uint i = 0; i < users[user].encryptedName.limbs.length; i++) {
+    FHE.allow(users[user].encryptedName.limbs[i], msg.sender);
+  }
   ```
 
 Event: `Claimed(user, index, claimer)`
@@ -422,7 +430,9 @@ function retrieve(address owner, uint256 index) external view
     uint32 emailByteLen,
     bytes memory payload,
     string memory publicMessage,
-    bytes32 contentHash
+    bytes32 contentHash,
+    euint256[] memory nameLimbs,
+    uint32 nameByteLen
   )
 ```
 
@@ -457,7 +467,8 @@ verification and recipient decryption.
   "skShare": "0x75554596171405abc...",
   "encryptedPayload": "0xab12...cd",
   "contentHash": "0x1234567890abcdef...",
-  "subject": "Farewell Message"
+  "subject": "Farewell Message",
+  "senderName": "Alice"
 }
 ```
 
@@ -474,6 +485,7 @@ verification and recipient decryption.
 | `encryptedPayload` | hex      | AES-128-GCM encrypted message (packed format)                           |
 | `contentHash`      | hex      | keccak256 of plaintext message (for proof verification)                 |
 | `subject`          | string   | Email subject line                                                      |
+| `senderName`       | string   | FHE-decrypted sender display name (optional, may be empty)              |
 
 ### 7.3 Data Flow
 
@@ -799,6 +811,7 @@ All protocol constants are defined in the smart contract:
 | -------------------------------- | ------- | --------------------- | ------------------------------------------- |
 | `DEFAULT_CHECKIN`                | uint64  | 30 days (2,592,000 s) | Default monthly check-in interval           |
 | `DEFAULT_GRACE`                  | uint64  | 7 days (604,800 s)    | One week for council voting                 |
+| `MAX_NAME_BYTE_LEN`              | uint32  | 128                   | Padded name length (4 × 32-byte FHE limbs)  |
 | `MAX_EMAIL_BYTE_LEN`             | uint32  | 224                   | Padded email length (7 × 32-byte FHE limbs) |
 | `MAX_PAYLOAD_BYTE_LEN`           | uint32  | 10,240                | 10 KB max message size (spam prevention)    |
 | `BASE_REWARD`                    | uint256 | 0.01 ether            | Entry fee for delivery proofs               |
@@ -873,11 +886,11 @@ event DkimKeyUpdated(bytes32 domain, uint256 pubkeyHash, bool trusted);
 The protocol supports arbitrary check-in and grace periods:
 
 ```solidity
-// Example: Weekly check-in, 3-day grace
-register("Alice", 1 weeks, 3 days);
+// Example: Weekly check-in, 3-day grace (with FHE-encrypted name)
+register(encNameLimbs, nameByteLen, nameInputProof, 1 weeks, 3 days);
 
-// Example: Annual check-in, 30-day grace
-register("Bob", 365 days, 30 days);
+// Example: Annual check-in, 30-day grace (no name)
+register(365 days, 30 days);
 ```
 
 Each user can choose independent durations, allowing flexible liveness strategies.

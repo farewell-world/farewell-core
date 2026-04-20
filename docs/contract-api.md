@@ -26,7 +26,7 @@ functions, events, constants, enums, and structs.
 
 | Network     | Chain ID | Contract Address                             |
 | ----------- | -------- | -------------------------------------------- |
-| **Sepolia** | 11155111 | `0x9b814A92c47619b3f884C90A126Ac8E3fc32f42f` |
+| **Sepolia** | 11155111 | `0xE494835ffd293E57655e61Ed854CA7a39130174e` |
 | **Hardhat** | 31337    | Local deployment (varies)                    |
 
 ---
@@ -58,6 +58,7 @@ All constants are immutable and defined at compile-time.
 | ---------------------- | --------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `DEFAULT_CHECKIN`      | `uint64`  | `30 days`     | Default check-in period if not specified during registration                                                                             |
 | `DEFAULT_GRACE`        | `uint64`  | `7 days`      | Default grace period if not specified during registration                                                                                |
+| `MAX_NAME_BYTE_LEN`    | `uint32`  | `128`         | Maximum name length in bytes. Names are padded to this length to prevent length leakage via FHE. Equals 4 × 32-byte limbs (128 bytes).    |
 | `MAX_EMAIL_BYTE_LEN`   | `uint32`  | `224`         | Maximum email length in bytes. Emails are padded to this length to prevent length leakage via FHE. Equals 7 × 32-byte limbs (224 bytes). |
 | `MAX_PAYLOAD_BYTE_LEN` | `uint32`  | `10240`       | Maximum encrypted payload size (10 KB). Prevents extremely large messages from being stored.                                             |
 | `BASE_REWARD`          | `uint256` | `0.01 ether`  | Base ETH reward per message with delivery proof. Used when calculating `calculateReward()`.                                              |
@@ -113,7 +114,7 @@ containing specific content, was actually sent. See [proof-structure.md](proof-s
 
 ```solidity
 struct User {
-  string name; // Display name (optional, max 100 bytes)
+  EncryptedString encryptedName; // FHE-encrypted display name (4 euint256 limbs, max 128 bytes)
   uint64 checkInPeriod; // Seconds user has to call ping()
   uint64 gracePeriod; // Seconds council can vote after check-in expires
   uint64 lastCheckIn; // Timestamp of last ping() or registration (also indicates registration)
@@ -154,11 +155,13 @@ Stored in `User.messages[]` array.
 
 ```solidity
 struct EncryptedString {
-  euint256[] limbs; // Email padded to MAX_EMAIL_BYTE_LEN and split into 32-byte chunks,
-  // each encrypted as euint256 (7 limbs for 224 bytes)
-  uint32 byteLen; // Original email length (before padding) for trimming during decryption
+  euint256[] limbs; // Data padded to fixed length and split into 32-byte chunks,
+  // each encrypted as euint256 (7 limbs for emails, 4 limbs for names)
+  uint32 byteLen; // Original length (before padding) for trimming during decryption
 }
 ```
+
+Used for both recipient emails (7 limbs, MAX_EMAIL_BYTE_LEN=224) and user names (4 limbs, MAX_NAME_BYTE_LEN=128).
 
 ### CouncilMember (Internal Storage)
 
@@ -250,24 +253,32 @@ number indicating FHEVM SDK version) |
 
 ### register (4 overloads)
 
-#### register(string name, uint64 checkInPeriod, uint64 gracePeriod)
+#### register(bytes32[] nameLimbs, uint32 nameByteLen, bytes nameInputProof, uint64 checkInPeriod, uint64 gracePeriod)
 
 ```solidity
-function register(string memory name, uint64 checkInPeriod, uint64 gracePeriod) external
+function register(
+    bytes32[] calldata nameLimbs,
+    uint32 nameByteLen,
+    bytes calldata nameInputProof,
+    uint64 checkInPeriod,
+    uint64 gracePeriod
+) external
 ```
 
-Register a new user or update an existing user's settings with a custom name and periods.
+Register a new user or update an existing user's settings with an FHE-encrypted name and custom periods.
 
 **Access**: Anyone (but caller must not be deceased)
 
-**Parameters**: | Name | Type | Description | |------|------|-------------| | `name` | `string` | Display name (max 100
-bytes, can be empty) | | `checkInPeriod` | `uint64` | Seconds between required check-ins (min 1 day, recommended 30
-days) | | `gracePeriod` | `uint64` | Seconds for council voting after check-in expires (min 1 day, recommended 7 days) |
+**Parameters**: | Name | Type | Description | |------|------|-------------| | `nameLimbs` | `bytes32[]` |
+FHE-encrypted name split into 32-byte limbs (4 limbs for MAX_NAME_BYTE_LEN=128 bytes) | | `nameByteLen` | `uint32` |
+Original name length before padding (max 128 bytes) | | `nameInputProof` | `bytes` | FHE input proof for name
+encryption | | `checkInPeriod` | `uint64` | Seconds between required check-ins (min 1 day, recommended 30 days) | |
+`gracePeriod` | `uint64` | Seconds for council voting after check-in expires (min 1 day, recommended 7 days) |
 
 **Returns**: None
 
 **Reverts**: | Error | Reason | |-------|--------| | `"checkInPeriod too short"` | `checkInPeriod < 1 days` | |
-`"gracePeriod too short"` | `gracePeriod < 1 days` | | `"name too long"` | `bytes(name).length > 100` | |
+`"gracePeriod too short"` | `gracePeriod < 1 days` | | `"name too long"` | `nameByteLen > 128` | |
 `"user is deceased"` | Caller is marked deceased (cannot modify) | | `"check-in period expired"` | Attempting to update
 after check-in window closed (new registration only) |
 
@@ -283,6 +294,8 @@ after check-in window closed (new registration only) |
   registration.
 - Automatically calls `ping()` to reset the check-in timer.
 - If user was previously voted `FinalAlive`, calling register/ping will reset that status.
+- The name is stored as FHE-encrypted limbs (EncryptedString) for privacy. It is decrypted only by the owner or
+  authorized claimers/council members via `FHE.allow()`.
 
 #### register(uint64 checkInPeriod, uint64 gracePeriod)
 
@@ -290,19 +303,23 @@ after check-in window closed (new registration only) |
 function register(uint64 checkInPeriod, uint64 gracePeriod) external
 ```
 
-Register with custom periods but empty name.
+Register with custom periods but no name.
 
-**Same as above with `name = ""`.**
+**Same as above without name parameters.**
 
 ---
 
-#### register(string name)
+#### register(bytes32[] nameLimbs, uint32 nameByteLen, bytes nameInputProof)
 
 ```solidity
-function register(string memory name) external
+function register(
+    bytes32[] calldata nameLimbs,
+    uint32 nameByteLen,
+    bytes calldata nameInputProof
+) external
 ```
 
-Register with custom name but default periods (30 days check-in, 7 days grace).
+Register with FHE-encrypted name but default periods (30 days check-in, 7 days grace).
 
 **Same as the full overload with `checkInPeriod = 30 days` and `gracePeriod = 7 days`.**
 
@@ -314,9 +331,9 @@ Register with custom name but default periods (30 days check-in, 7 days grace).
 function register() external
 ```
 
-Register with empty name and default periods (30 days check-in, 7 days grace).
+Register with no name and default periods (30 days check-in, 7 days grace).
 
-**Same as the full overload with `name = ""`, `checkInPeriod = 30 days`, and `gracePeriod = 7 days`.**
+**Same as the full overload without name parameters, `checkInPeriod = 30 days`, and `gracePeriod = 7 days`.**
 
 ---
 
@@ -345,46 +362,53 @@ at least once |
 
 ---
 
-### getUserName()
+### getEncryptedName()
 
 ```solidity
-function getUserName(address user) external view returns (string memory)
+function getEncryptedName(address user) external view returns (euint256[] memory, uint32)
 ```
 
-Get a user's display name.
+Get a user's FHE-encrypted display name.
 
 **Access**: Public (view)
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `user` | `address` | User address |
 
-**Returns**: | Name | Type | Description | |------|------|-------------| | ``|`string` | User's display name (can be
-empty string) |
+**Returns**: | Name | Type | Description | |------|------|-------------| | ``| `euint256[]` | FHE-encrypted name limbs
+(4 limbs, 32 bytes each) | | ``| `uint32` | Original name length before padding |
 
 **Reverts**: | Error | Reason | |-------|--------| | `"not registered"` | User has not registered |
 
 **Notes**:
 
-- Does not validate that the name is unique or non-empty (users can have empty names).
+- Returns FHE handles that can only be decrypted by the owner or parties granted access via `FHE.allow()`.
+- Council members and claimers are automatically granted access to name limbs.
+- `nameByteLen` of 0 indicates no name was set.
 
 ---
 
-### setName()
+### setEncryptedName()
 
 ```solidity
-function setName(string memory newName) external
+function setEncryptedName(
+    bytes32[] calldata nameLimbs,
+    uint32 nameByteLen,
+    bytes calldata nameInputProof
+) external
 ```
 
-Update the caller's display name.
+Update the caller's FHE-encrypted display name.
 
 **Access**: Only registered users (`msg.sender`)
 
-**Parameters**: | Name | Type | Description | |------|------|-------------| | `newName` | `string` | New display name
-(max 100 bytes) |
+**Parameters**: | Name | Type | Description | |------|------|-------------| | `nameLimbs` | `bytes32[]` |
+FHE-encrypted name split into 32-byte limbs (4 limbs for 128 bytes) | | `nameByteLen` | `uint32` | Original name
+length before padding (max 128 bytes) | | `nameInputProof` | `bytes` | FHE input proof for name encryption |
 
 **Returns**: None
 
 **Reverts**: | Error | Reason | |-------|--------| | `"not registered"` | Caller has not registered | |
-`"name too long"` | `bytes(newName).length > 100` |
+`"name too long"` | `nameByteLen > 128` |
 
 **Emits**:
 
@@ -394,6 +418,7 @@ Update the caller's display name.
 
 - Does not reset the check-in timer (use `ping()` for that).
 - Can be called while deceased or in grace period.
+- Existing council members are automatically granted `FHE.allow()` on the new name limbs.
 
 ---
 
@@ -889,7 +914,7 @@ already claimed |
 
 - Notifier (who called `markDeceased()`) has exclusive claim access for 24 hours.
 - After 24 hours, anyone can claim the same message.
-- Grants FHE decryption access via `FHE.allow()` to `msg.sender` for both the email and key share.
+- Grants FHE decryption access via `FHE.allow()` to `msg.sender` for the email, key share, and sender's encrypted name limbs.
 - Once claimed, message cannot be edited or revoked.
 - Only one claimer per message (first to claim wins).
 
@@ -904,7 +929,9 @@ function retrieve(address owner, uint256 index) external view returns (
     uint32 emailByteLen,
     bytes memory payload,
     string memory publicMessage,
-    bytes32 hash
+    bytes32 hash,
+    euint256[] memory nameLimbs,
+    uint32 nameByteLen
 )
 ```
 
@@ -919,7 +946,8 @@ address | | `index` | `uint256` | Message index |
 share (decryptable only by owner or approved claimer) | | `encodedRecipientEmail` | `euint256[]` | FHE-encrypted email
 limbs | | `emailByteLen` | `uint32` | Original email length | | `payload` | `bytes` | Encrypted payload (AES-encrypted
 client-side) | | `publicMessage` | `string` | Plaintext public message | | `hash` | `bytes32` | Keccak256 hash of
-original inputs |
+original inputs | | `nameLimbs` | `euint256[]` | FHE-encrypted sender name limbs (4 limbs) | | `nameByteLen` | `uint32`
+| Original sender name length before padding |
 
 **Reverts**: | Error | Reason | |-------|--------| | `"invalid index"` | `index >= users[owner].messages.length` | |
 `"message was revoked"` | Message is revoked | | `"owner not deceased"` | Non-owner trying to retrieve from alive user |
@@ -1147,6 +1175,7 @@ council member |
 - Each user has a separate council (up to 20 members).
 - No stake or permission check — council members are trusted by the user.
 - Council members can only vote during grace period.
+- Grants FHE decryption access via `FHE.allow()` to the member for the user's encrypted name limbs.
 
 ---
 
@@ -1807,7 +1836,7 @@ Complete table of all error strings and their causes.
 | ------------------------------------ | ------------------------------------------------ | --------------------------------------------- |
 | `"checkInPeriod too short"`          | `register()` overloads                           | `checkInPeriod < 1 days`                      |
 | `"gracePeriod too short"`            | `register()` overloads                           | `gracePeriod < 1 days`                        |
-| `"name too long"`                    | `register()`, `setName()`                        | `bytes(name).length > 100`                    |
+| `"name too long"`                    | `register()`, `setEncryptedName()`               | `nameByteLen > 128`                           |
 | `"user is deceased"`                 | `register()`, `editMessage()`, `revokeMessage()` | User marked deceased                          |
 | `"check-in period expired"`          | `register()` (existing user)                     | Attempting update after check-in window       |
 | `"not registered"`                   | Multiple                                         | User has not registered (`lastCheckIn == 0`)  |
