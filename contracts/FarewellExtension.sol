@@ -49,6 +49,13 @@ contract FarewellExtension is FarewellStorage {
         // Add to reverse index
         memberToUsers[member].push(msg.sender);
 
+        // Allow council member to decrypt user's encrypted name
+        EncryptedString storage enc = users[msg.sender].encryptedName;
+        for (uint256 i = 0; i < enc.limbs.length; ) {
+            FHE.allow(enc.limbs[i], member);
+            unchecked { ++i; }
+        }
+
         emit CouncilMemberAdded(msg.sender, member);
     }
 

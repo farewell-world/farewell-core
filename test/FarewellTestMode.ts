@@ -110,13 +110,13 @@ describe("FarewellTestMode", function () {
 
     // Alice: past grace (backdated checkIn + grace + 1 day)
     let tx = await contract.setupTestUser(
-      alice.address, "Alice", CHECK_IN, GRACE, CHECK_IN + GRACE + ONE_DAY,
+      alice.address, CHECK_IN, GRACE, CHECK_IN + GRACE + ONE_DAY,
     );
     await tx.wait();
 
     // Bob: in grace (backdated checkIn + half grace)
     tx = await contract.setupTestUser(
-      bob.address, "Bob", CHECK_IN, GRACE, CHECK_IN + Math.floor(GRACE / 2),
+      bob.address, CHECK_IN, GRACE, CHECK_IN + Math.floor(GRACE / 2),
     );
     await tx.wait();
     tx = await contract.setupTestCouncil(
@@ -126,7 +126,7 @@ describe("FarewellTestMode", function () {
 
     // Charlie: in grace (same timing as Bob), with council
     tx = await contract.setupTestUser(
-      charlie.address, "Charlie", CHECK_IN, GRACE, CHECK_IN + Math.floor(GRACE / 2),
+      charlie.address, CHECK_IN, GRACE, CHECK_IN + Math.floor(GRACE / 2),
     );
     await tx.wait();
     tx = await contract.setupTestCouncil(
@@ -135,18 +135,18 @@ describe("FarewellTestMode", function () {
     await tx.wait();
 
     // Dave: alive then force deceased
-    tx = await contract.setupTestUser(dave.address, "Dave", CHECK_IN, GRACE, 0);
+    tx = await contract.setupTestUser(dave.address, CHECK_IN, GRACE, 0);
     await tx.wait();
     tx = await contract.forceMarkDeceased(dave.address, owner.address);
     await tx.wait();
 
     // Elias: alive
-    tx = await contract.setupTestUser(elias.address, "Elias", CHECK_IN, GRACE, 0);
+    tx = await contract.setupTestUser(elias.address, CHECK_IN, GRACE, 0);
     await tx.wait();
 
     // Fiona: in grace, no council
     tx = await contract.setupTestUser(
-      fiona.address, "Fiona", CHECK_IN, GRACE, CHECK_IN + Math.floor(GRACE / 2),
+      fiona.address, CHECK_IN, GRACE, CHECK_IN + Math.floor(GRACE / 2),
     );
     await tx.wait();
   });
@@ -156,13 +156,12 @@ describe("FarewellTestMode", function () {
   describe("Setup Functions", function () {
     it("setupTestUser registers a user with correct state", async function () {
       expect(await contract.isRegistered(alice.address)).to.eq(true);
-      expect(await contract.getUserName(alice.address)).to.eq("Alice");
     });
 
     it("setupTestUser rejects non-owner", async function () {
       await expect(
         contract.connect(alice).setupTestUser(
-          ethers.Wallet.createRandom().address, "Rando", CHECK_IN, GRACE, 0,
+          ethers.Wallet.createRandom().address, CHECK_IN, GRACE, 0,
         ),
       ).to.be.revertedWithCustomError(contract, "OwnableUnauthorizedAccount");
     });
@@ -200,7 +199,7 @@ describe("FarewellTestMode", function () {
     it("forceSetFinalAlive sets finalAlive flag", async function () {
       // Set up a fresh user and force FinalAlive
       const tx = await contract.setupTestUser(
-        owner.address, "Owner", CHECK_IN, GRACE, 0,
+        owner.address, CHECK_IN, GRACE, 0,
       );
       await tx.wait();
       const tx2 = await contract.forceSetFinalAlive(owner.address);
@@ -383,9 +382,9 @@ describe("FarewellTestMode", function () {
       ).to.be.revertedWithCustomError(contract, "UserDeceased");
     });
 
-    it("setName reverts with UserDeceased", async function () {
+    it("register reverts with UserDeceased for no-name variant", async function () {
       await expect(
-        contract.connect(dave).setName("New Name"),
+        contract.connect(dave)["register(uint64,uint64)"](86400, 86400),
       ).to.be.revertedWithCustomError(contract, "UserDeceased");
     });
   });
@@ -412,11 +411,14 @@ describe("FarewellTestMode", function () {
       ).to.be.revertedWithCustomError(contract, "NotTimedOut");
     });
 
-    it("can update name", async function () {
-      const tx = await contract.connect(elias).setName("Elias Updated");
+    it("can update check-in and grace periods", async function () {
+      const tx = await contract.connect(elias).setCheckInPeriod(60 * ONE_DAY);
       await tx.wait();
+      const tx2 = await contract.connect(elias).setGracePeriod(14 * ONE_DAY);
+      await tx2.wait();
 
-      expect(await contract.getUserName(elias.address)).to.eq("Elias Updated");
+      const [status] = await contract.getUserState(elias.address);
+      expect(status).to.eq(0); // Still alive
     });
 
     it("can update check-in period", async function () {
@@ -512,7 +514,7 @@ describe("FarewellTestMode", function () {
     // Shared setup: owner registers, adds message with reward, force-deceased, alice claims
     async function setupClaimableMessage() {
       // Register owner as a test user (alive)
-      let tx = await contract.setupTestUser(owner.address, "Owner", CHECK_IN, GRACE, 0);
+      let tx = await contract.setupTestUser(owner.address, CHECK_IN, GRACE, 0);
       await tx.wait();
 
       // Deploy ConfigurableMockVerifier and configure

@@ -139,7 +139,7 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     }
 
     struct User {
-        string name; // optional
+        EncryptedString encryptedName; // FHE-encrypted display name (4 limbs, max 128 bytes)
         uint64 checkInPeriod; // seconds
         uint64 gracePeriod; // seconds
         uint64 lastCheckIn; // timestamp
@@ -428,6 +428,9 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
 
     // --- Public message constants ---
     uint32 internal constant MAX_PUBLIC_MESSAGE_BYTE_LEN = 1024; // 1KB
+
+    // --- Name constants ---
+    uint32 internal constant MAX_NAME_BYTE_LEN = 128; // 4 limbs max
 
     // --- Passphrase hint constants ---
     uint32 internal constant MAX_HINT_BYTE_LEN = 64; // 2 limbs max
