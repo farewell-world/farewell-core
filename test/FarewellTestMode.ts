@@ -1,3 +1,4 @@
+import { FhevmType } from "@fhevm/hardhat-plugin";
 import {
   Farewell__factory,
   FarewellExtension,
@@ -7,7 +8,7 @@ import {
 } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, fhevm } from "hardhat";
 
 // Combined type: FarewellTestMode (core + test helpers) + FarewellExtension
 type FarewellFull = FarewellTestMode & FarewellExtension;
@@ -15,6 +16,35 @@ type FarewellFull = FarewellTestMode & FarewellExtension;
 const ONE_DAY = 86400;
 const CHECK_IN = 30 * ONE_DAY; // 30 days
 const GRACE = 7 * ONE_DAY; // 7 days
+
+// --- Helpers for claim + reward tests ---
+const toBytes = (s: string) => ethers.toUtf8Bytes(s);
+const MAX_EMAIL_BYTE_LEN = 224;
+
+function chunk32ToU256Words(u8: Uint8Array, padToMax: boolean = true): bigint[] {
+  let padded: Uint8Array;
+  if (padToMax && u8.length <= MAX_EMAIL_BYTE_LEN) {
+    padded = new Uint8Array(MAX_EMAIL_BYTE_LEN);
+    padded.set(u8, 0);
+  } else {
+    padded = u8;
+  }
+  const words: bigint[] = [];
+  for (let i = 0; i < padded.length; i += 32) {
+    const slice = padded.subarray(i, i + 32);
+    const chunk = new Uint8Array(32);
+    chunk.set(slice);
+    words.push(BigInt("0x" + Buffer.from(chunk).toString("hex")));
+  }
+  return words;
+}
+
+const rewardEmail = "recipient@example.com";
+const rewardPayload = "secret farewell message";
+const rewardEmailBytes = toBytes(rewardEmail);
+const rewardPayloadBytes = toBytes(rewardPayload);
+const rewardEmailWords = chunk32ToU256Words(rewardEmailBytes);
+const rewardSkShare: bigint = 42n;
 
 async function deployFixture() {
   const [owner] = await ethers.getSigners();
@@ -467,6 +497,157 @@ describe("FarewellTestMode", function () {
       const [charlieAlive, charlieDead] = await contract.getGraceVoteStatus(charlie.address);
       expect(charlieAlive).to.eq(0);
       expect(charlieDead).to.eq(1);
+    });
+  });
+
+  // --- Full claim + reward flow using forceMarkDeceased ---
+
+  describe("Full Claim + Reward Flow", function () {
+    let verifier: any;
+    let recipientEmailHash: string;
+    let payloadContentHash: string;
+    const pubkeyHash = 12345n;
+    const rewardAmount = ethers.parseEther("0.1");
+
+    // Shared setup: owner registers, adds message with reward, force-deceased, alice claims
+    async function setupClaimableMessage() {
+      // Register owner as a test user (alive)
+      let tx = await contract.setupTestUser(owner.address, "Owner", CHECK_IN, GRACE, 0);
+      await tx.wait();
+
+      // Deploy ConfigurableMockVerifier and configure
+      const VerifierFactory = await ethers.getContractFactory("ConfigurableMockVerifier");
+      verifier = await VerifierFactory.deploy();
+      await verifier.waitForDeployment();
+      tx = await contract.setZkEmailVerifier(await verifier.getAddress());
+      await tx.wait();
+
+      // Trust a DKIM key
+      tx = await contract.setTrustedDkimKey(ethers.ZeroHash, pubkeyHash, true);
+      await tx.wait();
+
+      // FHE-encrypt email + skShare
+      const enc = fhevm.createEncryptedInput(contractAddress, owner.address);
+      for (const w of rewardEmailWords) enc.add256(w);
+      enc.add128(rewardSkShare);
+      const encrypted = await enc.encrypt();
+      const nLimbs = rewardEmailWords.length;
+
+      recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes(rewardEmail));
+      payloadContentHash = ethers.keccak256(rewardPayloadBytes);
+
+      // Add message with ETH reward
+      tx = await contract.connect(owner)[
+        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
+      ](
+        encrypted.handles.slice(0, nLimbs),
+        rewardEmailBytes.length,
+        encrypted.handles[nLimbs],
+        rewardPayloadBytes,
+        encrypted.inputProof,
+        "",
+        "",
+        [recipientEmailHash],
+        payloadContentHash,
+        ethers.ZeroAddress,
+        0,
+        { value: rewardAmount },
+      );
+      await tx.wait();
+
+      // Force-mark owner deceased (alice is notifier)
+      tx = await contract.forceMarkDeceased(owner.address, alice.address);
+      await tx.wait();
+
+      // Alice claims (she's notifier → within 24h exclusivity)
+      tx = await contract.connect(alice).claim(owner.address, 0);
+      await tx.wait();
+    }
+
+    function makeProof(signals: bigint[]) {
+      return {
+        pA: [0n, 0n] as [bigint, bigint],
+        pB: [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        pC: [0n, 0n] as [bigint, bigint],
+        publicSignals: signals,
+      };
+    }
+
+    it("happy path: prove delivery + claim reward", async function () {
+      await setupClaimableMessage();
+
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      let tx = await contract.connect(alice).proveDelivery(owner.address, 0, 0, proof);
+      await tx.wait();
+
+      const balanceBefore = await ethers.provider.getBalance(alice.address);
+      tx = await contract.connect(alice).claimReward(owner.address, 0);
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const balanceAfter = await ethers.provider.getBalance(alice.address);
+
+      expect(balanceAfter + gasUsed - balanceBefore).to.eq(rewardAmount);
+    });
+
+    it("rejects when verifier returns false", async function () {
+      await setupClaimableMessage();
+      await verifier.setResult(false);
+
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      await expect(
+        contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
+      ).to.be.revertedWithCustomError(contract, "InvalidProof");
+    });
+
+    it("rejects wrong recipient email hash", async function () {
+      await setupClaimableMessage();
+
+      const wrongEmailHash = ethers.keccak256(ethers.toUtf8Bytes("wrong@example.com"));
+      const proof = makeProof([BigInt(wrongEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      await expect(
+        contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
+      ).to.be.revertedWithCustomError(contract, "InvalidProof");
+    });
+
+    it("rejects untrusted DKIM key", async function () {
+      await setupClaimableMessage();
+
+      const untrustedKey = 99999n;
+      const proof = makeProof([BigInt(recipientEmailHash), untrustedKey, BigInt(payloadContentHash)]);
+      await expect(
+        contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
+      ).to.be.revertedWithCustomError(contract, "InvalidProof");
+    });
+
+    it("rejects wrong content hash", async function () {
+      await setupClaimableMessage();
+
+      const wrongContentHash = ethers.keccak256(ethers.toUtf8Bytes("tampered content"));
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(wrongContentHash)]);
+      await expect(
+        contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
+      ).to.be.revertedWithCustomError(contract, "InvalidProof");
+    });
+
+    it("rejects double proof for same recipient", async function () {
+      await setupClaimableMessage();
+
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      const tx = await contract.connect(alice).proveDelivery(owner.address, 0, 0, proof);
+      await tx.wait();
+
+      await expect(
+        contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
+      ).to.be.revertedWithCustomError(contract, "AlreadyProven");
+    });
+
+    it("rejects non-claimant from proving delivery", async function () {
+      await setupClaimableMessage();
+
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      await expect(
+        contract.connect(bob).proveDelivery(owner.address, 0, 0, proof),
+      ).to.be.revertedWithCustomError(contract, "NotClaimant");
     });
   });
 });
