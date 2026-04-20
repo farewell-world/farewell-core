@@ -25,7 +25,6 @@ contract FarewellTestMode is Farewell {
 
     /// @notice Register a user with a backdated lastCheckIn to place them in any lifecycle state.
     /// @param userAddr The address to register
-    /// @param name Display name
     /// @param checkInPeriod Check-in period in seconds (min 1 day)
     /// @param gracePeriod Grace period in seconds (min 1 day)
     /// @param backdateSeconds How far back to set lastCheckIn from current block.timestamp.
@@ -33,7 +32,6 @@ contract FarewellTestMode is Farewell {
     ///        checkInPeriod + gracePeriod + buffer = past grace (eligible for markDeceased).
     function setupTestUser(
         address userAddr,
-        string calldata name,
         uint64 checkInPeriod,
         uint64 gracePeriod,
         uint256 backdateSeconds
@@ -41,7 +39,6 @@ contract FarewellTestMode is Farewell {
         User storage u = users[userAddr];
         bool isNew = (u.lastCheckIn == 0);
 
-        u.name = name;
         u.checkInPeriod = checkInPeriod;
         u.gracePeriod = gracePeriod;
         u.encryptedVoting = false;
