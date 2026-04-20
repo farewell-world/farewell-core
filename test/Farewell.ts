@@ -92,6 +92,26 @@ function utf8Decode(u8: Uint8Array): string {
   return new TextDecoder().decode(u8);
 }
 
+const MAX_NAME_BYTE_LEN = 128;
+
+function nameToLimbs(name: string): bigint[] {
+  const bytes = toBytes(name);
+  return chunk32ToU256Words(bytes, false).length > 0
+    ? (() => {
+        const padded = new Uint8Array(MAX_NAME_BYTE_LEN);
+        padded.set(bytes, 0);
+        const words: bigint[] = [];
+        for (let i = 0; i < padded.length; i += 32) {
+          const slice = padded.subarray(i, i + 32);
+          const chunk = new Uint8Array(32);
+          chunk.set(slice);
+          words.push(BigInt("0x" + Buffer.from(chunk).toString("hex")));
+        }
+        return words;
+      })()
+    : [];
+}
+
 // --- arrange ---
 const email1 = "test@gmail.com";
 const payload1 = "hello";
@@ -324,53 +344,69 @@ describe("Farewell", function () {
     expect(ethers.toUtf8String(encryptedClaimedMessage.payload)).to.equal(payload1);
   });
 
-  describe("setName", function () {
-    it("should allow a registered user to set and update their name", async function () {
+  describe("setEncryptedName", function () {
+    it("should allow a registered user to set and update their encrypted name", async function () {
       // Register without name
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      // Name should be empty initially
-      let name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("");
+      // Name should have zero byteLen initially
+      let [, nameByteLen] = await FarewellContract.getEncryptedName(signers.owner.address);
+      expect(nameByteLen).to.eq(0);
 
-      // Set name
-      tx = await FarewellContract.connect(signers.owner).setName("Alice");
-      await tx.wait();
+      // Set name — encrypt "Alice"
+      const nameLimbs = nameToLimbs("Alice");
+      const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of nameLimbs) nameEnc.add256(w);
+      const nameEncResult = await nameEnc.encrypt();
 
-      name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("Alice");
-
-      // Update name
-      tx = await FarewellContract.connect(signers.owner).setName("Bob");
-      await tx.wait();
-
-      name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("Bob");
-    });
-
-    it("should allow registration with name", async function () {
-      // Register with name
-      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Charlie",
-        86400n, // 1 day check-in
-        86400n, // 1 day grace (minimum)
+      tx = await FarewellContract.connect(signers.owner).setEncryptedName(
+        nameEncResult.handles,
+        5, // "Alice" is 5 bytes
+        nameEncResult.inputProof,
       );
       await tx.wait();
 
-      const name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("Charlie");
+      [, nameByteLen] = await FarewellContract.getEncryptedName(signers.owner.address);
+      expect(nameByteLen).to.eq(5);
+    });
+
+    it("should allow registration with encrypted name", async function () {
+      const nameLimbs = nameToLimbs("Charlie");
+      const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of nameLimbs) nameEnc.add256(w);
+      const nameEncResult = await nameEnc.encrypt();
+
+      const tx = await FarewellContract.connect(signers.owner)[
+        "register(bytes32[],uint32,bytes,uint64,uint64)"
+      ](
+        nameEncResult.handles,
+        7, // "Charlie" is 7 bytes
+        nameEncResult.inputProof,
+        86400n,
+        86400n,
+      );
+      await tx.wait();
+
+      const [, byteLen] = await FarewellContract.getEncryptedName(signers.owner.address);
+      expect(byteLen).to.eq(7);
     });
 
     it("should revert if user is not registered", async function () {
-      // The FHEVM hardhat plugin intercepts the transaction and throws HardhatFhevmError
-      // before the EVM can produce the custom error. We verify the call fails.
       try {
-        const tx = await FarewellContract.connect(signers.owner).setName("Test");
+        const nameLimbs = nameToLimbs("Test");
+        const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+        for (const w of nameLimbs) nameEnc.add256(w);
+        const nameEncResult = await nameEnc.encrypt();
+
+        const tx = await FarewellContract.connect(signers.owner).setEncryptedName(
+          nameEncResult.handles,
+          4,
+          nameEncResult.inputProof,
+        );
         await tx.wait();
         expect.fail("Expected transaction to revert");
       } catch (e: unknown) {
-        // Transaction reverted (either via custom error or FHEVM assertion)
         expect(e).to.not.be.null;
       }
     });
@@ -676,12 +712,27 @@ describe("Farewell", function () {
       ).to.be.revertedWithCustomError(FarewellContract, "GracePeriodTooShort");
     });
 
-    it("should reject name longer than 100 characters", async function () {
-      const longName = "a".repeat(101);
-      await expect(FarewellContract.connect(signers.owner)["register(string)"](longName)).to.be.revertedWithCustomError(
-        FarewellContract,
-        "NameTooLong",
-      );
+    it("should reject encrypted name with byteLen exceeding MAX_NAME_BYTE_LEN", async function () {
+      const nameLimbs = nameToLimbs("test");
+      const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
+      for (const w of nameLimbs) nameEnc.add256(w);
+      const nameEncResult = await nameEnc.encrypt();
+
+      try {
+        const tx = await FarewellContract.connect(signers.owner)[
+          "register(bytes32[],uint32,bytes,uint64,uint64)"
+        ](
+          nameEncResult.handles,
+          129, // exceeds MAX_NAME_BYTE_LEN (128)
+          nameEncResult.inputProof,
+          86400n,
+          86400n,
+        );
+        await tx.wait();
+        expect.fail("Expected transaction to revert");
+      } catch (e: unknown) {
+        expect(e).to.not.be.null;
+      }
     });
 
     it("should reject claim with invalid index (out of bounds)", async function () {
@@ -904,7 +955,7 @@ describe("Farewell", function () {
     it("should allow council to vote during grace period", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       // Add council member
@@ -928,7 +979,7 @@ describe("Farewell", function () {
     it("should reject voting outside grace period", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       // Add council member
@@ -944,7 +995,7 @@ describe("Farewell", function () {
     it("should mark user as alive with majority vote and prevent future deceased status", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       // Add 3 council members
@@ -980,7 +1031,7 @@ describe("Farewell", function () {
     it("should mark user as deceased with majority dead vote", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       // Add 3 council members
@@ -1012,7 +1063,7 @@ describe("Farewell", function () {
     it("should prevent voting after decision is made", async function () {
       const checkInPeriod = 86400; // 1 day
       const gracePeriod = 86400; // 1 day
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       // Add 3 council members
@@ -1590,8 +1641,7 @@ describe("Farewell", function () {
       const gracePeriod = 86400; // 1 day
 
       // Register
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Test User",
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](
         checkInPeriod,
         gracePeriod,
       );
@@ -1675,7 +1725,7 @@ describe("Farewell", function () {
       const gracePeriod = 86400; // 1 day
 
       // Register
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       const initialCheckIn = await FarewellContract.getLastCheckIn(signers.owner.address);
@@ -1884,7 +1934,7 @@ describe("Farewell", function () {
     it("H-2: should allow finalAlive user to re-enter liveness cycle via ping", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"]("", checkInPeriod, gracePeriod, false);
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](checkInPeriod, gracePeriod, false);
       await tx.wait();
 
       // Add 3 council members
@@ -1930,8 +1980,7 @@ describe("Farewell", function () {
     it("H-4: should allow re-registration during grace period but prevent past grace", async function () {
       const checkInPeriod = 86400;
       const gracePeriod = 86400;
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Original",
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](
         checkInPeriod,
         gracePeriod,
       );
@@ -1942,15 +1991,11 @@ describe("Farewell", function () {
       await ethers.provider.send("evm_mine", []);
 
       // Re-registration during grace period should succeed (consistent with ping())
-      tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Updated",
+      tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](
         checkInPeriod,
         gracePeriod,
       );
       await tx.wait();
-
-      const name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("Updated");
 
       // Advance past both check-in and grace
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
@@ -1958,37 +2003,11 @@ describe("Farewell", function () {
 
       // Re-registration past grace should fail
       await expect(
-        FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-          "TooLate",
+        FarewellContract.connect(signers.owner)["register(uint64,uint64)"](
           checkInPeriod,
           gracePeriod,
         ),
       ).to.be.revertedWithCustomError(FarewellContract, "CheckInExpired");
-    });
-
-    it("H-4: should update name on re-registration", async function () {
-      const checkInPeriod = 86400;
-      const gracePeriod = 86400;
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Original",
-        checkInPeriod,
-        gracePeriod,
-      );
-      await tx.wait();
-
-      let name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("Original");
-
-      // Re-register within check-in period (should update name)
-      tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Updated",
-        checkInPeriod,
-        gracePeriod,
-      );
-      await tx.wait();
-
-      name = await FarewellContract.getUserName(signers.owner.address);
-      expect(name).to.eq("Updated");
     });
 
     it("M-1: should invalidate old message hash when editing", async function () {
@@ -2200,21 +2219,8 @@ describe("Farewell", function () {
       expect(isEncrypted).to.eq(true);
     });
 
-    it("new users should have encryptedVoting=true by default (register(string,uint64,uint64))", async function () {
-      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64)"](
-        "Test",
-        checkInPeriod,
-        gracePeriod,
-      );
-      await tx.wait();
-
-      const isEncrypted = await FarewellContract.getEncryptedVoting(signers.owner.address);
-      expect(isEncrypted).to.eq(true);
-    });
-
     it("can register with encryptedVoting=false explicitly", async function () {
-      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"](
-        "",
+      const tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](
         checkInPeriod,
         gracePeriod,
         false,
@@ -2226,8 +2232,7 @@ describe("Farewell", function () {
     });
 
     it("can register with encryptedVoting=true explicitly", async function () {
-      const tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"](
-        "",
+      const tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](
         checkInPeriod,
         gracePeriod,
         true,
@@ -2321,8 +2326,7 @@ describe("Farewell", function () {
 
     it("voteOnStatusEncrypted should revert with PlaintextVotingMode for plaintext users", async function () {
       // Register with plaintext voting
-      let tx = await FarewellContract.connect(signers.owner)["register(string,uint64,uint64,bool)"](
-        "",
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64,bool)"](
         checkInPeriod,
         gracePeriod,
         false,
