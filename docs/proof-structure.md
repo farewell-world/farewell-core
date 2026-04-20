@@ -62,7 +62,8 @@ The claim package is downloaded from the Farewell UI and contains the encrypted 
   "skShare": "0x75554596171405...",
   "encryptedPayload": "0x...",
   "contentHash": "0x1234...",
-  "subject": "Farewell Message"
+  "subject": "Farewell Message",
+  "senderName": "Alice"
 }
 ```
 
@@ -75,6 +76,7 @@ The claim package is downloaded from the Farewell UI and contains the encrypted 
 - `encryptedPayload`: AES-128-GCM packed format: `0x` + IV(12 bytes) + ciphertext + GCM-tag
 - `contentHash`: keccak256(decrypted message content) — stored on-chain for verification
 - `subject`: Email subject line
+- `senderName`: FHE-decrypted sender display name (optional, may be empty)
 
 ## Decryption Flow (Recipient Side)
 
@@ -258,7 +260,7 @@ or downloaded from the GitHub Release).
 
 | Contract | Address |
 |----------|---------|
-| Farewell (proxy) | `0xe59562a989Cc656ec4400902D59cf34A72041c22` |
+| Farewell (proxy) | `0xE494835ffd293E57655e61Ed854CA7a39130174e` |
 | FarewellGroth16Verifier | `0xF73400562fc1EFf15de8F4b6be142b7B9d66bD01` |
 
 ## Security Properties

@@ -64,7 +64,8 @@ A registered user can add trusted addresses to their council. Requirements:
 - User must **not** be in a grace period (council is frozen during grace)
 
 The function stores a `CouncilMember` struct with the member address and join timestamp, updates the
-`councilMembers` lookup mapping, and adds the user to the `memberToUsers` reverse index.
+`councilMembers` lookup mapping, adds the user to the `memberToUsers` reverse index, and grants the member
+`FHE.allow()` access to the user's encrypted name limbs so the council member can identify who they are voting for.
 
 Event: `CouncilMemberAdded(address indexed user, address indexed member)`
 
@@ -475,7 +476,7 @@ struct User {
 
 - **New registrations**: `encryptedVoting` defaults to `true`. All `register()` overloads that do not accept an
   explicit `encryptedVoting` parameter pass `true` to the internal `_register()` function.
-- **Explicit registration**: The four-parameter overload `register(name, checkInPeriod, gracePeriod, encryptedVoting)`
+- **Explicit registration**: The full overload `register(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod, encryptedVoting)`
   allows the user to choose their mode at registration time.
 - **Existing users (pre-upgrade)**: Users who registered before the encrypted voting feature was added have
   `encryptedVoting == false` by default (Solidity zero-initializes new storage fields). This ensures backward
