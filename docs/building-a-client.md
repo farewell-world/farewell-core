@@ -37,7 +37,7 @@ Note: The npm package is `fhevmjs` (from Zama), not `@fhenixprotocol/fhevmjs`.
 
 | Network         | Chain ID | Contract Address                             |
 | --------------- | -------- | -------------------------------------------- |
-| Sepolia         | 11155111 | `0x9b814A92c47619b3f884C90A126Ac8E3fc32f42f` |
+| Sepolia         | 11155111 | `0xE494835ffd293E57655e61Ed854CA7a39130174e` |
 | Hardhat (Local) | 31337    | Varies per deployment                        |
 
 ### Loading the ABI
@@ -73,6 +73,7 @@ The Farewell contract manages:
 ```solidity
 uint64 constant DEFAULT_CHECKIN = 30 days;
 uint64 constant DEFAULT_GRACE = 7 days;
+uint32 constant MAX_NAME_BYTE_LEN = 128;
 uint32 constant MAX_EMAIL_BYTE_LEN = 224;
 uint32 constant MAX_PAYLOAD_BYTE_LEN = 10240; // 10KB
 uint256 constant BASE_REWARD = 0.01 ether;
@@ -90,7 +91,7 @@ import { ethers, BrowserProvider, Contract } from "ethers";
 import FarewellArtifact from "../artifacts/contracts/Farewell.sol/Farewell.json";
 
 const FAREWELL_ADDRESSES: Record<number, string> = {
-  11155111: "0x9b814A92c47619b3f884C90A126Ac8E3fc32f42f", // Sepolia
+  11155111: "0xE494835ffd293E57655e61Ed854CA7a39130174e", // Sepolia
   // 31337: '0x...', // Hardhat (varies per deployment)
 };
 
@@ -234,17 +235,36 @@ enum UserStatus {
 ```typescript
 async function register(
   contract: Contract,
-  name: string,
   checkInPeriod: number, // in seconds (min 1 day = 86400)
   gracePeriod: number, // in seconds (min 1 day = 86400)
 ): Promise<void> {
-  const tx = await contract.register(name, checkInPeriod, gracePeriod);
+  const tx = await contract["register(uint64,uint64)"](checkInPeriod, gracePeriod);
   await tx.wait();
 }
 
-// Or use defaults (30 days check-in, 7 days grace)
-async function registerWithDefaults(contract: Contract, name: string): Promise<void> {
-  const tx = await contract["register(string)"](name);
+// Or register with an FHE-encrypted name
+async function registerWithName(
+  contract: Contract,
+  fhevmInstance: FhevmInstance,
+  name: string,
+  checkInPeriod: number,
+  gracePeriod: number,
+  contractAddress: string,
+  userAddress: string,
+): Promise<void> {
+  // Encrypt the name (pad to MAX_NAME_BYTE_LEN=128, split into 4 limbs)
+  const { limbHandles, byteLen, inputProof } = await encryptName(
+    fhevmInstance, name, contractAddress, userAddress
+  );
+  const tx = await contract["register(bytes32[],uint32,bytes,uint64,uint64)"](
+    limbHandles, byteLen, inputProof, checkInPeriod, gracePeriod
+  );
+  await tx.wait();
+}
+
+// Register with defaults (30 days check-in, 7 days grace)
+async function registerWithDefaults(contract: Contract): Promise<void> {
+  const tx = await contract["register()"]();
   await tx.wait();
 }
 ```
@@ -526,6 +546,8 @@ async function retrieveMessage(
   payload: Uint8Array;
   publicMessage: string;
   hash: `0x${string}`;
+  nameLimbs: bigint[];
+  nameByteLen: number;
 }> {
   const result = await contract.retrieve(ownerAddress, index);
   return {
@@ -535,6 +557,8 @@ async function retrieveMessage(
     payload: ethers.getBytes(result.payload),
     publicMessage: result.publicMessage,
     hash: result.hash,
+    nameLimbs: result.nameLimbs,
+    nameByteLen: Number(result.nameByteLen),
   };
 }
 ```
@@ -752,9 +776,9 @@ async function farewellWorkflow() {
   const fhevmInstance = await initFhevm(provider);
   const userAddress = await signer.getAddress();
 
-  // 2. Register
+  // 2. Register (without name, or use registerWithName for FHE-encrypted name)
   if (!(await contract.isRegistered(userAddress))) {
-    await register(contract, "My Name", 30 * 24 * 3600, 7 * 24 * 3600);
+    await register(contract, 30 * 24 * 3600, 7 * 24 * 3600);
   }
 
   // 3. Add a message
