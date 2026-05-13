@@ -62,6 +62,8 @@ contract Farewell is FarewellStorage {
     }
 
     /// @notice Grant FHE decryption access on a user's encrypted name limbs
+    /// @dev FHE.allow() grants are irrevocable — once an address is allowed,
+    ///      there is no FHEVM mechanism to revoke decryption access.
     function _allowNameLimbs(address user, address allowee) internal {
         EncryptedString storage enc = users[user].encryptedName;
         for (uint256 i = 0; i < enc.limbs.length; ) {
@@ -646,7 +648,7 @@ contract Farewell is FarewellStorage {
         uint256 rewardAmount
     ) internal returns (uint256 index) {
         if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
-        if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
+        if (!(recipientEmailHashes.length < MAX_RECIPIENTS + 1)) revert TooManyRecipients();
 
         index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
             hintLimbs, hintByteLen, hintInputProof);
@@ -704,7 +706,7 @@ contract Farewell is FarewellStorage {
         bytes calldata rewardInputProof
     ) external returns (uint256 index) {
         if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
-        if (!(recipientEmailHashes.length < 257)) revert TooManyRecipients();
+        if (!(recipientEmailHashes.length < MAX_RECIPIENTS + 1)) revert TooManyRecipients();
         if (!allowedRewardTokens[cToken]) revert TokenNotAllowed();
 
         index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
@@ -745,6 +747,9 @@ contract Farewell is FarewellStorage {
     }
 
     /// @notice Internal helper to refund reward from a message back to its owner
+    /// @dev ETH refunds use a push pattern (direct .call{value}). If the message
+    ///      owner is a contract whose receive()/fallback() reverts, the refund fails
+    ///      and revokeMessage()/editMessage() will be permanently blocked for that message.
     /// @param m The message storage reference
     /// @param owner The owner to refund to
     function _refundReward(Message storage m, address owner) internal {
@@ -768,7 +773,7 @@ contract Farewell is FarewellStorage {
                 euint64 refundAmt = m.encryptedRewardAmount;
                 m.encryptedRewardAmount = euint64.wrap(0);
                 // Note: lockedConfidentialRewards tracking is best-effort for FHE sums
-                IConfidentialERC20(m.rewardToken).transfer(owner, refundAmt);
+                if (!IConfidentialERC20(m.rewardToken).transfer(owner, refundAmt)) revert ConfidentialTransferFailed();
             }
         }
     }
@@ -908,6 +913,9 @@ contract Farewell is FarewellStorage {
 
     /// @notice Anyone may trigger delivery after user is deceased.
     /// @dev Emits data+email; mark delivered to prevent duplicates.
+    ///      SECURITY: FHE.allow() grants are permanent and cannot be revoked.
+    ///      Once a claimer receives decryption access to message data (skShare,
+    ///      email limbs, hint limbs, name limbs), that access persists indefinitely.
     /// @param user The deceased user's address
     /// @param index The message index to claim
     function claim(address user, uint256 index) external nonReentrant {
@@ -1018,6 +1026,7 @@ contract Farewell is FarewellStorage {
         }
     }
 
-    /// @notice Accept plain ETH transfers
-    receive() external payable {}
+    receive() external payable {
+        revert DirectEthNotAccepted();
+    }
 }

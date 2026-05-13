@@ -2564,5 +2564,43 @@ describe("Farewell", function () {
       status = await FarewellContract.getEncryptedGraceVoteStatus(signers.owner.address);
       expect(status.uniqueAttempts).to.eq(1);
     });
+
+    it("should emit EncryptedVotingChanged when toggling encrypted voting", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register()"]();
+      await tx.wait();
+
+      await expect(FarewellContract.connect(signers.owner).setEncryptedVoting(false))
+        .to.emit(FarewellContract, "EncryptedVotingChanged")
+        .withArgs(signers.owner.address, false);
+
+      await expect(FarewellContract.connect(signers.owner).setEncryptedVoting(true))
+        .to.emit(FarewellContract, "EncryptedVotingChanged")
+        .withArgs(signers.owner.address, true);
+    });
+  });
+
+  describe("Direct ETH rejection", function () {
+    it("should revert when sending ETH directly to the contract", async function () {
+      await expect(
+        signers.owner.sendTransaction({
+          to: FarewellContractAddress,
+          value: ethers.parseEther("1.0"),
+        }),
+      ).to.be.revertedWithCustomError(FarewellContract, "DirectEthNotAccepted");
+    });
+  });
+
+  describe("Access control fixes", function () {
+    it("should revert removeCouncilMember for unregistered caller", async function () {
+      // The FHEVM hardhat plugin intercepts delegatecall reverts before the EVM
+      // can surface the custom error. We verify the call fails.
+      try {
+        const tx = await FarewellContract.connect(signers.alice).removeCouncilMember(signers.bob.address);
+        await tx.wait();
+        expect.fail("Expected transaction to revert");
+      } catch (e: unknown) {
+        expect(e).to.not.be.null;
+      }
+    });
   });
 });

@@ -740,7 +740,7 @@ message |
 
 **Reverts**: | Error | Reason | |-------|--------| | `"must include reward"` | `msg.value == 0` | |
 `"must have at least one recipient"` | `recipientEmailHashes.length == 0` | | `"too many recipients"` |
-`recipientEmailHashes.length > 256` | | (plus all reverts from `addMessage()`) | Email and payload validation |
+`recipientEmailHashes.length > 20` | | (plus all reverts from `addMessage()`) | Email and payload validation |
 
 **Emits**:
 
@@ -752,7 +752,7 @@ message |
 - `recipientEmailHashes` should be Poseidon hashes of recipient emails (computed off-chain).
 - `payloadContentHash` is the Keccak256 hash of the _decrypted_ payload (known only to the claimer after decryption).
 - Reward is locked in contract until `claimReward()` is called (after all recipients proven).
-- Max 256 recipients due to bitmap tracking (see `provenRecipientsBitmap`).
+- Max 20 recipients (`MAX_RECIPIENTS`) to prevent state bloat. Bitmap tracking via `provenRecipientsBitmap`.
 
 ---
 
@@ -1825,6 +1825,21 @@ Emitted when a user changes their discoverability setting via `setDiscoverable()
 | ------- | -------------- | --------- | --------------------------------------- |
 | Yes     | `user`         | `address` | The user who changed discoverability    |
 | No      | `discoverable` | `bool`    | `true` if opted in, `false` if opted out |
+
+---
+
+### EncryptedVotingChanged
+
+```solidity
+event EncryptedVotingChanged(address indexed user, bool indexed enabled)
+```
+
+Emitted when a user toggles their encrypted voting mode via `setEncryptedVoting()`.
+
+| Indexed | Name      | Type      | Description                                    |
+| ------- | --------- | --------- | ---------------------------------------------- |
+| Yes     | `user`    | `address` | The user who changed their voting mode         |
+| Yes     | `enabled` | `bool`    | `true` if encrypted voting enabled, `false` if plaintext |
 
 ---
 
