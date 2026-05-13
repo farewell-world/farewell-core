@@ -15,6 +15,11 @@ types
 deployments
 tmp
 
+# Foundry
+forge-out
+forge-cache
+lib
+
 # files
 *.env
 *.log

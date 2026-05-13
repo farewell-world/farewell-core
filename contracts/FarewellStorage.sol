@@ -221,6 +221,7 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     error NotAlive();
     error DirectEthNotAccepted();
     error ConfidentialTransferFailed();
+    error ZeroAddress();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;

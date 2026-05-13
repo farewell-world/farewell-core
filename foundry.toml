@@ -1,0 +1,27 @@
+[profile.default]
+src = "contracts"
+out = "forge-out"
+libs = ["node_modules", "lib"]
+solc = "0.8.27"
+evm_version = "cancun"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+
+# Keep Hardhat's artifacts directory separate
+cache_path = "forge-cache"
+
+# FHEVM contracts exceed EIP-170; match Hardhat behavior
+bytecode_hash = "none"
+
+remappings = [
+    "@fhevm/solidity/=node_modules/@fhevm/solidity/",
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[invariant]
+runs = 256
+depth = 50
+fail_on_revert = false

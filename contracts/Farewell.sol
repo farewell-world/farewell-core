@@ -772,7 +772,14 @@ contract Farewell is FarewellStorage {
             if (FHE.isInitialized(m.encryptedRewardAmount)) {
                 euint64 refundAmt = m.encryptedRewardAmount;
                 m.encryptedRewardAmount = euint64.wrap(0);
-                // Note: lockedConfidentialRewards tracking is best-effort for FHE sums
+
+                if (FHE.isInitialized(lockedConfidentialRewards[owner][m.rewardToken])) {
+                    lockedConfidentialRewards[owner][m.rewardToken] = FHE.sub(
+                        lockedConfidentialRewards[owner][m.rewardToken], refundAmt
+                    );
+                    FHE.allowThis(lockedConfidentialRewards[owner][m.rewardToken]);
+                }
+
                 if (!IConfidentialERC20(m.rewardToken).transfer(owner, refundAmt)) revert ConfidentialTransferFailed();
             }
         }

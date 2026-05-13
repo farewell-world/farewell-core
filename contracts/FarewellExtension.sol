@@ -224,6 +224,9 @@ contract FarewellExtension is FarewellStorage {
     /// @notice Cast an encrypted vote on a user's status during grace period
     /// @dev Vote values: 1=alive, 2=not-alive. Invalid values (not 1 or 2) are silently ignored.
     ///      Voters can re-submit to replace their previous vote (enables recovery from invalid submissions).
+    ///      Known limitation: vote replacement combined with plaintext hasAttempted/uniqueAttempts enables
+    ///      a timing attack where a voter observes others' events and strategically replaces their vote.
+    ///      Accepted for PoC since council members are trusted. See docs/council-system.md §8.6.
     /// @param user The user to vote on
     /// @param encVote FHE-encrypted vote value
     /// @param inputProof The FHE input proof for the encrypted vote
@@ -597,6 +600,13 @@ contract FarewellExtension is FarewellStorage {
             euint64 amount = m.encryptedRewardAmount;
             m.encryptedRewardAmount = euint64.wrap(0);
 
+            if (FHE.isInitialized(lockedConfidentialRewards[user][m.rewardToken])) {
+                lockedConfidentialRewards[user][m.rewardToken] = FHE.sub(
+                    lockedConfidentialRewards[user][m.rewardToken], amount
+                );
+                FHE.allowThis(lockedConfidentialRewards[user][m.rewardToken]);
+            }
+
             // Shielded delivery: transfer confidential tokens directly
             if (!IConfidentialERC20(m.rewardToken).transfer(msg.sender, amount)) revert ConfidentialTransferFailed();
 
@@ -629,6 +639,14 @@ contract FarewellExtension is FarewellStorage {
         // Mark encrypted amount for public decryption
         euint64 amount = m.encryptedRewardAmount;
         m.encryptedRewardAmount = euint64.wrap(0);
+
+        if (FHE.isInitialized(lockedConfidentialRewards[user][m.rewardToken])) {
+            lockedConfidentialRewards[user][m.rewardToken] = FHE.sub(
+                lockedConfidentialRewards[user][m.rewardToken], amount
+            );
+            FHE.allowThis(lockedConfidentialRewards[user][m.rewardToken]);
+        }
+
         euint64 decryptableAmount = FHE.makePubliclyDecryptable(amount);
         FHE.allowThis(decryptableAmount);
 
@@ -760,6 +778,7 @@ contract FarewellExtension is FarewellStorage {
     /// @notice Set the zk-email Groth16 verifier contract address
     /// @param _verifier The verifier contract address
     function setZkEmailVerifier(address _verifier) external onlyOwner {
+        if (_verifier == address(0)) revert ZeroAddress();
         zkEmailVerifier = _verifier;
         emit ZkEmailVerifierSet(_verifier);
     }
