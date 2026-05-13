@@ -2,7 +2,7 @@ import { ethers } from "hardhat";
 import fs from "node:fs";
 import path from "node:path";
 
-const FAREWELL_ADDRESS = process.env.FAREWELL_ADDRESS || "0xe59562a989Cc656ec4400902D59cf34A72041c22";
+const FAREWELL_ADDRESS = process.env.FAREWELL_ADDRESS || "0xe2FaA7F07a63A9545c8c251834e6a9791Dae0F86";
 const REGISTRY_PATH = path.join(__dirname, "dkim-registry.json");
 
 interface RegistryEntry {
