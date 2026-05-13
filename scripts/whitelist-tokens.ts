@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 
 async function main() {
-  const farewellAddress = "0xe59562a989Cc656ec4400902D59cf34A72041c22";
+  const farewellAddress = "0xe2FaA7F07a63A9545c8c251834e6a9791Dae0F86";
   const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
 
   // Read MockUSDT address from deployment

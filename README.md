@@ -184,7 +184,7 @@ reliability and censorship resistance?
 
 If you find Farewell interesting or useful, consider sending a donation on Ethereum or any EVM-compatible chain:
 
-**`0x6DB81c37e192f19197430ad027916495542B04bd`**
+**`0x10fcc6f07a84bBaCd26e2827122be09830243da5`**
 
 ---
 
