@@ -31,7 +31,7 @@ jobs:
         run: npm ci
       - name: compile
         run: npx hardhat compile
-      - uses: "crytic/slither-action@v0.4.0"
-        with:
-          solc-version: "0.8.27"
-          slither-args: '--filter-paths "node_modules|fhevmTemp" --exclude naming-convention,solc-version'
+      - name: install slither
+        run: pip3 install slither-analyzer
+      - name: run slither
+        run: slither . --filter-paths "node_modules|fhevmTemp" --exclude naming-convention,solc-version --compile-force-framework hardhat --no-compile
