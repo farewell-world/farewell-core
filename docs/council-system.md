@@ -753,7 +753,7 @@ The encrypted voting flow depends on the FHEVM KMS network producing decryption 
 This is an inherent dependency of the encrypted voting mode. Users who require guaranteed council intervention should
 consider whether the KMS availability meets their reliability requirements.
 
-### 8.6 Re-Voting and Replacement
+### 8.6 Re-Voting, Replacement, and Timing Attack (Known Limitation)
 
 In encrypted mode, voters can re-submit to replace their previous vote. This is tracked via `FHE.isInitialized()` on
 the per-voter contribution handles. The replacement is done by subtracting the old contribution and adding the new one.
@@ -763,3 +763,12 @@ In plaintext mode, re-voting is not allowed. Once a member votes, `AlreadyVoted(
 This difference exists because plaintext votes are public and irrevocable (changing them would be visible and
 controversial), while encrypted votes are private and the replacement is indistinguishable from a first-time vote to
 observers.
+
+**Known limitation — vote replacement timing attack:** Because `hasAttempted` and `uniqueAttempts` are plaintext,
+a council member can observe other voters' `EncryptedGraceVoteCast` events on-chain, infer how many votes have been
+cast, and strategically time a replacement vote just before the auto-trigger threshold to influence the outcome. The
+attack requires a voter who is both a council member AND strategically motivated to manipulate the result.
+
+This is accepted for the current PoC because council members are trusted individuals chosen by the user. For mainnet
+deployment, a commit-reveal scheme (commit hash first, reveal encrypted vote after deadline) would eliminate this vector
+at the cost of an extra transaction per voter and a delayed vote resolution window.

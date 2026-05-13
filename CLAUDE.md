@@ -203,6 +203,7 @@ The contract uses Zama's FHEVM for encrypted data:
 6. **ETH Reward Push Pattern**: Reward refunds use `.call{value}` — if a user registers from a contract that reverts on receive, message revocation is blocked
 7. **Recipient Limit**: Messages with rewards are limited to 20 recipients (MAX_RECIPIENTS)
 8. **Contract Size**: FHE operations inflate bytecode beyond 24KB EIP-170 limit — `allowUnlimitedContractSize` is required on Hardhat; mainnet may need further splitting
+9. **Encrypted Vote Timing Attack**: In encrypted voting mode, vote replacement combined with plaintext `hasAttempted`/`uniqueAttempts` allows a council member to observe others' events and strategically time a replacement vote. Accepted for PoC since council members are trusted. See `docs/council-system.md` §8.6
 
 ## Development Guidelines
 

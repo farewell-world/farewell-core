@@ -32,20 +32,17 @@ The circuit emits three public outputs, in order — these are the
 |-------|--------|--------|---|
 | `[0]` | `recipientHash` | `PoseidonModular(PackBytes(recipientEmail))` from the signed `To:` header | `publicSignals[0] == m.recipientEmailHashes[recipientIndex]` |
 | `[1]` | `dkimKeyHash`   | `EmailVerifier.pubkeyHash` — native `Poseidon` over the RSA pubkey chunks | `_isTrustedDkimKey(publicSignals[1])` (membership in `trustedDkimKeys[bytes32(0)]`) |
-| `[2]` | `contentHash`   | Private input passed through | `publicSignals[2] == m.payloadContentHash` |
+| `[2]` | `contentHash`   | Decoded from `Farewell-Hash: 0x<64 hex>` in DKIM-signed body | `publicSignals[2] == m.payloadContentHash` |
 
-### v1 security caveat
+### Content hash body binding (v2)
 
-`contentHash` is a pass-through: the circuit does not assert the hash
-appears in the email body. A claimer could therefore reuse any
-DKIM-signed email they've received from the recipient, sign a proof
-against an unrelated message's `payloadContentHash`, and claim its
-reward. The body itself is still DKIM-signed, so it can't be forged — but
-it isn't bound to the specific message the claim is for.
-
-V2 hardening (follow-up work, tracked separately): extract the
-`Farewell-Hash: 0x…` marker from the email body, ASCII-hex-decode the 64
-chars into a 256-bit value, and constrain it to equal `publicSignals[2]`.
+The circuit extracts the marker `Farewell-Hash: 0x` from the DKIM-signed
+email body at a prover-supplied position (`contentHashMarkerStart`),
+ASCII-hex-decodes the 64 lowercase characters into a 256-bit field
+element, and constrains it to equal `contentHashIn`. This binds the
+public signal to actual email content the recipient saw, preventing a
+claimer from reusing an unrelated DKIM-signed email to claim a different
+message's reward.
 
 ## Prerequisites
 
