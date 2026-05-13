@@ -34,4 +34,4 @@ jobs:
       - name: install slither
         run: pip3 install slither-analyzer
       - name: run slither
-        run: slither . --filter-paths "node_modules|fhevmTemp" --exclude naming-convention,solc-version --compile-force-framework hardhat --no-compile
+        run: slither . --filter-paths "node_modules|fhevmTemp" --exclude naming-convention,solc-version --compile-force-framework hardhat --ignore-compile
