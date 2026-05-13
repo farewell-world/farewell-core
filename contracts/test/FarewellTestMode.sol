@@ -104,4 +104,62 @@ contract FarewellTestMode is Farewell {
         emit StatusDecided(userAddr, true);
         emit Ping(userAddr, u.lastCheckIn);
     }
+
+    /// @notice Create a message with ETH reward, bypassing FHE encryption.
+    /// @param userAddr The user who owns the message
+    /// @param recipientHashes Poseidon hashes of recipient emails
+    /// @param contentHash Keccak256 hash of payload content
+    function setupTestMessageWithReward(
+        address userAddr,
+        bytes32[] calldata recipientHashes,
+        bytes32 contentHash
+    ) external payable onlyOwner onlyRegistered(userAddr) {
+        User storage u = users[userAddr];
+        uint256 idx = u.messages.length;
+        u.messages.push();
+        Message storage m = u.messages[idx];
+        m.recipientEmailHashes = recipientHashes;
+        m.payloadContentHash = contentHash;
+        m.reward = msg.value;
+        m.rewardType = RewardType.Eth;
+        m.rewardToken = address(0);
+        m.createdAt = uint64(block.timestamp);
+        m.hash = keccak256(abi.encodePacked(userAddr, idx, contentHash));
+        lockedTokenRewards[userAddr][address(0)] += msg.value;
+        emit MessageAdded(userAddr, idx);
+    }
+
+    /// @notice Force a message to be claimed, bypassing normal claiming logic.
+    /// @param userAddr The message owner
+    /// @param index The message index
+    /// @param claimer The address that claimed
+    function forceClaimMessage(
+        address userAddr,
+        uint256 index,
+        address claimer
+    ) external onlyOwner onlyRegistered(userAddr) {
+        User storage u = users[userAddr];
+        require(index < u.messages.length, "Invalid index");
+        Message storage m = u.messages[index];
+        m.claimed = true;
+        m.claimedBy = claimer;
+        emit Claimed(userAddr, index, claimer);
+    }
+
+    /// @notice Force a recipient as proven in the bitmap.
+    /// @param userAddr The message owner
+    /// @param index The message index
+    /// @param recipientIndex The recipient index to mark as proven
+    function forceProveRecipient(
+        address userAddr,
+        uint256 index,
+        uint256 recipientIndex
+    ) external onlyOwner onlyRegistered(userAddr) {
+        User storage u = users[userAddr];
+        require(index < u.messages.length, "Invalid index");
+        Message storage m = u.messages[index];
+        require(recipientIndex < m.recipientEmailHashes.length, "Invalid recipient");
+        m.provenRecipientsBitmap |= (1 << recipientIndex);
+        emit DeliveryProven(userAddr, index, recipientIndex, msg.sender);
+    }
 }

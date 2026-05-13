@@ -5,11 +5,12 @@ include "@zk-email/circuits/email-verifier.circom";
 include "@zk-email/circuits/helpers/reveal-substring.circom";
 include "@zk-email/circuits/utils/bytes.circom";
 include "@zk-email/circuits/utils/hash.circom";
+include "./hex-decode.circom";
 
-// FarewellDelivery
-// =================
-// Proves that a DKIM-signed email was sent to a specific recipient, and
-// commits to a specific payload content hash.
+// FarewellDelivery (v2)
+// ======================
+// Proves that a DKIM-signed email was sent to a specific recipient, with
+// the payload content hash embedded in the signed email body.
 //
 // Public outputs (what the Farewell contract reads as publicSignals):
 //   [0] recipientHash = PoseidonModular(PackBytes(recipientEmail))
@@ -18,14 +19,11 @@ include "@zk-email/circuits/utils/hash.circom";
 //       — Poseidon(k/2)(pubkey chunks) as produced natively by zk-email.
 //       — must be in trustedDkimKeys[bytes32(0)][…] on-chain (seeded by
 //         scripts/fetch-dkim-keys.ts + scripts/wire-zkemail.ts).
-//   [2] contentHash   = pass-through of a private input.
+//   [2] contentHash   = decoded from "Farewell-Hash: 0x<64 hex>" in body.
 //       — must match m.payloadContentHash on-chain.
-//       — v1 security note: the circuit does NOT assert the content hash
-//         appears in the body. The body is still DKIM-signed so a claimer
-//         cannot forge a body, but they can reuse any DKIM-signed email
-//         they received from the recipient and attach it to a reward
-//         claim. V2 will bind the hash to the body via an in-circuit
-//         ASCII-hex-decode at a known Farewell-Hash marker position.
+//       — the circuit extracts the marker from the DKIM-signed body,
+//         ASCII-hex-decodes 64 lowercase chars into a 256-bit value,
+//         and constrains it to equal the private contentHashIn input.
 //
 // Parameters:
 //   maxHeadersLength    — header bytes (must be multiple of 64 for SHA
@@ -38,7 +36,9 @@ include "@zk-email/circuits/utils/hash.circom";
 //   n, k                — RSA chunking: 121-bit chunks × 17 chunks =
 //                         2057 bits capacity, enough for 2048-bit RSA
 //                         (Gmail, Outlook, Yahoo, iCloud all use 2048).
-template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n, k) {
+//   markerLen           — byte length of the "Farewell-Hash: 0x" prefix
+//                         (17 bytes). Followed by 64 hex chars = 81 total.
+template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n, k, markerLen) {
     // ---- EmailVerifier inputs (mirror of @zk-email/circuits) ----
     signal input emailHeader[maxHeadersLength];
     signal input emailHeaderLength;
@@ -50,14 +50,13 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
     signal input precomputedSHA[32];
 
     // ---- Farewell-specific private inputs ----
-    // Index in the canonicalized header where the recipient email bytes
-    // (the value of the "To:" header, stripped of "Name <...>" formatting
-    // and normalized to lowercase) start, and the length of those bytes.
     signal input recipientEmailStart;
     signal input recipientEmailLength;
     // The 32-byte payload content hash the contract stored at message-
-    // create time (m.payloadContentHash). Passed verbatim to publicSignals[2].
+    // create time (m.payloadContentHash).
     signal input contentHashIn;
+    // Byte offset in emailBody where "Farewell-Hash: 0x" begins.
+    signal input contentHashMarkerStart;
 
     // ---- Public outputs ----
     signal output recipientHash;
@@ -115,10 +114,40 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
     }
     recipientHash <== hasher.out;
 
-    // 4. The content hash flows straight through. See v1 security note at
-    //    the top of this file.
+    // 4. Bind the content hash to the DKIM-signed email body.
+    //    The body must contain the marker "Farewell-Hash: 0x" (17 bytes)
+    //    followed by 64 lowercase hex characters [0-9a-f].
+
+    // 4a. Extract markerLen + 64 bytes from body at the claimed position.
+    var totalExtract = markerLen + 64;
+    component hashReveal = RevealSubstring(
+        maxBodyLength,
+        totalExtract,
+        /* shouldCheckUniqueness */ 0
+    );
+    hashReveal.in                  <== emailBody;
+    hashReveal.substringStartIndex <== contentHashMarkerStart;
+    hashReveal.substringLength     <== totalExtract;
+
+    // 4b. Verify the marker prefix matches "Farewell-Hash: 0x" exactly.
+    //     ASCII: F=70 a=97 r=114 e=101 w=119 e=101 l=108 l=108
+    //            -=45 H=72 a=97 s=115 h=104 :=58 SP=32 0=48 x=120
+    var marker[17] = [70, 97, 114, 101, 119, 101, 108, 108, 45, 72, 97, 115, 104, 58, 32, 48, 120];
+    for (var i = 0; i < markerLen; i++) {
+        hashReveal.substring[i] === marker[i];
+    }
+
+    // 4c. Hex-decode the 64 chars after the marker into a field element.
+    component hexDecode = AsciiHexToField(64);
+    for (var i = 0; i < 64; i++) {
+        hexDecode.chars[i] <== hashReveal.substring[markerLen + i];
+    }
+
+    // 4d. Constrain: decoded hash from email body must equal the claimed
+    //     content hash (which the contract checks against payloadContentHash).
+    hexDecode.value === contentHashIn;
     contentHash <== contentHashIn;
 }
 
-// maxHeadersLength, maxBodyLength, maxRecipientBytes, n, k
-component main = FarewellDelivery(1024, 1024, 256, 121, 17);
+// maxHeadersLength, maxBodyLength, maxRecipientBytes, n, k, markerLen
+component main = FarewellDelivery(1024, 1024, 256, 121, 17, 17);

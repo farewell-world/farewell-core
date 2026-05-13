@@ -109,7 +109,7 @@ The claimer does NOT decrypt the message — only the **recipient** can, using t
 
 The Groth16 circuit (`circuits/farewell_delivery.circom`) wraps `@zk-email/circuits::EmailVerifier` with Farewell-specific signal extraction:
 
-**Parameters:** `maxHeadersLength=1024, maxBodyLength=1024, maxRecipientBytes=256, n=121, k=17`
+**Parameters:** `maxHeadersLength=1024, maxBodyLength=1024, maxRecipientBytes=256, n=121, k=17, markerLen=17`
 
 **Public Outputs:**
 
@@ -117,9 +117,9 @@ The Groth16 circuit (`circuits/farewell_delivery.circom`) wraps `@zk-email/circu
 |-------|--------|-------------|----------------|
 | `[0]` | `recipientHash` | `PoseidonModular(PackBytes(recipient_email_bytes))` | `== m.recipientEmailHashes[i]` |
 | `[1]` | `dkimKeyHash` | `PoseidonLarge(121,17)(rsa_pubkey_chunks)` — native `@zk-email` pubkeyHash | `_isTrustedDkimKey(pubkeyHash)` |
-| `[2]` | `contentHash` | Private input passed through (v1) | `== m.payloadContentHash` |
+| `[2]` | `contentHash` | Decoded from `Farewell-Hash: 0x<64 hex>` in DKIM-signed body | `== m.payloadContentHash` |
 
-**v1 Security Note:** `contentHash` is a pass-through — the circuit does not assert it appears in the email body. V2 will bind it via an in-circuit ASCII-hex-decode of the `Farewell-Hash` marker.
+**Content Hash Body Binding:** The circuit extracts the marker `Farewell-Hash: 0x` (17 bytes) from the DKIM-signed email body at a prover-supplied offset (`contentHashMarkerStart`), ASCII-hex-decodes the following 64 lowercase hex characters into a 256-bit value, and constrains it to equal the private `contentHashIn` input. This binds `publicSignals[2]` to actual email content the recipient saw.
 
 ## Contract Verification
 
