@@ -1,5 +1,5 @@
 {
-  "name": "fhevm-hardhat-template",
+  "name": "farewell-core",
   "description": "Hardhat-based template for developing FHEVM Solidity smart contracts",
   "version": "0.1.0",
   "engines": {

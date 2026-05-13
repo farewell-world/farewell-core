@@ -219,6 +219,8 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     error TokenNotAllowed();
     error InvalidRewardType();
     error NotAlive();
+    error DirectEthNotAccepted();
+    error ConfidentialTransferFailed();
 
     /// @notice Mapping of user address to user data
     mapping(address user => User config) public users;
@@ -412,6 +414,11 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     /// @param shielded Whether the claim was shielded (encrypted transfer) or unshielded
     event ConfidentialRewardClaimed(address indexed user, uint256 indexed messageIndex, address indexed claimer, address token, bool shielded);
 
+    /// @notice Emitted when a user toggles encrypted voting mode
+    /// @param user The user's address
+    /// @param enabled Whether encrypted voting is now enabled
+    event EncryptedVotingChanged(address indexed user, bool indexed enabled);
+
     // solhint-disable-next-line no-empty-blocks
     constructor(address initialOwner) Ownable(initialOwner) {}
 
@@ -437,6 +444,9 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
 
     // --- Council constants ---
     uint256 internal constant MAX_COUNCIL_SIZE = 20;
+
+    // --- Reward constants ---
+    uint256 internal constant MAX_RECIPIENTS = 20;
 
     /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {

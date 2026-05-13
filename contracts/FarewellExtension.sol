@@ -34,6 +34,9 @@ contract FarewellExtension is FarewellStorage {
     }
 
     /// @notice Add a council member (no stake required, max 20 members)
+    /// @dev FHE.allow() grants to council members for the user's encrypted name
+    ///      are permanent. If a council member is later removed, they retain FHE
+    ///      decryption access to the name limbs (FHEVM limitation).
     /// @param member The address to add as council member
     function addCouncilMember(address member) external onlyRegistered(msg.sender) {
         if (_isInGracePeriod(users[msg.sender])) revert CouncilFrozenDuringGrace();
@@ -61,7 +64,7 @@ contract FarewellExtension is FarewellStorage {
 
     /// @notice Remove a council member (can be called by user only)
     /// @param member The address to remove from council
-    function removeCouncilMember(address member) external {
+    function removeCouncilMember(address member) external onlyRegistered(msg.sender) {
         if (!councilMembers[msg.sender][member]) revert NotCouncilMember();
         if (users[msg.sender].lastCheckIn != 0 && _isInGracePeriod(users[msg.sender]))
             revert CouncilFrozenDuringGrace();
@@ -88,6 +91,25 @@ contract FarewellExtension is FarewellStorage {
                     }
                     delete vote.hasVoted[member];
                     delete vote.votedAlive[member];
+                }
+
+                // Clear stale encrypted vote data if member had voted
+                EncryptedGraceVote storage evote = encryptedGraceVotes[msg.sender];
+                if (evote.hasAttempted[member]) {
+                    if (FHE.isInitialized(evote.voterAliveContrib[member])) {
+                        if (FHE.isInitialized(evote.encAliveSum)) {
+                            evote.encAliveSum = FHE.sub(evote.encAliveSum, evote.voterAliveContrib[member]);
+                            evote.encDeadSum = FHE.sub(evote.encDeadSum, evote.voterDeadContrib[member]);
+                            FHE.allowThis(evote.encAliveSum);
+                            FHE.allowThis(evote.encDeadSum);
+                        }
+                    }
+                    delete evote.hasAttempted[member];
+                    evote.voterAliveContrib[member] = euint8.wrap(0);
+                    evote.voterDeadContrib[member] = euint8.wrap(0);
+                    if (evote.uniqueAttempts > 0) {
+                        --evote.uniqueAttempts;
+                    }
                 }
 
                 // Remove from reverse index
@@ -384,6 +406,7 @@ contract FarewellExtension is FarewellStorage {
         if (u.deceased) revert UserDeceased();
         if (_isInGracePeriod(u)) revert CouncilFrozenDuringGrace();
         u.encryptedVoting = enabled;
+        emit EncryptedVotingChanged(msg.sender, enabled);
     }
 
     /// @notice Get user's current status
@@ -575,7 +598,7 @@ contract FarewellExtension is FarewellStorage {
             m.encryptedRewardAmount = euint64.wrap(0);
 
             // Shielded delivery: transfer confidential tokens directly
-            IConfidentialERC20(m.rewardToken).transfer(msg.sender, amount);
+            if (!IConfidentialERC20(m.rewardToken).transfer(msg.sender, amount)) revert ConfidentialTransferFailed();
 
             emit ConfidentialRewardClaimed(user, messageIndex, msg.sender, m.rewardToken, true);
         } else {

@@ -37,7 +37,9 @@ const config: HardhatUserConfig = {
         mnemonic: MNEMONIC,
       },
       chainId: 31337,
-      allowUnlimitedContractSize: true, // Contract exceeds 24KB with FHE operations
+      // EIP-170 enforces 24KB contract size on production networks.
+      // FHE operations inflate bytecode — measure with `npx hardhat size-contracts`.
+      allowUnlimitedContractSize: true,
     },
     anvil: {
       accounts: {
