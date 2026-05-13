@@ -178,6 +178,7 @@ event DiscoverabilityChanged(address indexed user, bool discoverable);
 event EncryptedGraceVoteCast(address indexed user, address indexed voter);
 event VoteDecryptionRequested(address indexed user);
 event EncryptedVoteResolved(address indexed user, uint8 result);
+event EncryptedVotingChanged(address indexed user, bool indexed enabled);
 ```
 
 ## FHE Integration
@@ -195,9 +196,13 @@ The contract uses Zama's FHEVM for encrypted data:
 ### Known Limitations
 
 1. **No Recovery**: Users marked deceased cannot be recovered (except via council vote before finalization)
-2. **FHE Permissions**: Once `FHE.allow()` is called, it cannot be revoked
+2. **FHE Permissions**: Once `FHE.allow()` is called, it cannot be revoked — claimers and council members retain decryption access permanently
 3. **Timestamp Manipulation**: Block timestamps can be manipulated ~15 seconds
 4. **ZK Verifier Configuration**: Current beta implementation requires the verifier contract to be set by the owner
+5. **Direct ETH Rejected**: The contract's `receive()` reverts — ETH can only enter via `addMessageWithReward()`
+6. **ETH Reward Push Pattern**: Reward refunds use `.call{value}` — if a user registers from a contract that reverts on receive, message revocation is blocked
+7. **Recipient Limit**: Messages with rewards are limited to 20 recipients (MAX_RECIPIENTS)
+8. **Contract Size**: FHE operations inflate bytecode beyond 24KB EIP-170 limit — `allowUnlimitedContractSize` is required on Hardhat; mainnet may need further splitting
 
 ## Development Guidelines
 
