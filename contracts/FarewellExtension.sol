@@ -53,6 +53,51 @@ contract FarewellExtension is FarewellStorage {
         emit CouncilInvitationSent(msg.sender, member);
     }
 
+    /// @notice Accept a pending council invitation
+    /// @dev Called by the invitee. Grants mutual FHE ACLs on encrypted names.
+    /// @param inviter The address that sent the invitation
+    function acceptCouncilInvitation(address inviter) external {
+        if (!pendingInvitations[inviter][msg.sender]) revert NoSuchInvitation();
+        User storage inviterUser = users[inviter];
+        if (inviterUser.lastCheckIn == 0) revert NotRegistered();
+        if (inviterUser.deceased) revert UserDeceased();
+        if (!(councils[inviter].length < MAX_COUNCIL_SIZE)) revert CouncilFull();
+
+        _removePendingInvitation(inviter, msg.sender);
+
+        councils[inviter].push(CouncilMember({member: msg.sender, joinedAt: uint64(block.timestamp)}));
+        councilMembers[inviter][msg.sender] = true;
+        memberToUsers[msg.sender].push(inviter);
+
+        // Mutual ACL grants: invitee can decrypt inviter's name
+        _allowNameLimbsExt(inviter, msg.sender);
+        // Inviter can decrypt invitee's name (if invitee is registered)
+        if (users[msg.sender].lastCheckIn != 0) {
+            _allowNameLimbsExt(msg.sender, inviter);
+        }
+
+        emit CouncilInvitationAccepted(inviter, msg.sender);
+        emit CouncilMemberAdded(inviter, msg.sender);
+    }
+
+    /// @notice Decline a pending council invitation
+    /// @dev Called by the invitee
+    /// @param inviter The address that sent the invitation
+    function declineCouncilInvitation(address inviter) external {
+        if (!pendingInvitations[inviter][msg.sender]) revert NoSuchInvitation();
+        _removePendingInvitation(inviter, msg.sender);
+        emit CouncilInvitationDeclined(inviter, msg.sender);
+    }
+
+    /// @notice Cancel a pending council invitation
+    /// @dev Called by the inviter
+    /// @param member The address the invitation was sent to
+    function cancelCouncilInvitation(address member) external {
+        if (!pendingInvitations[msg.sender][member]) revert NoSuchInvitation();
+        _removePendingInvitation(msg.sender, member);
+        emit CouncilInvitationCancelled(msg.sender, member);
+    }
+
     /// @notice Remove a council member (can be called by user only)
     /// @param member The address to remove from council
     function removeCouncilMember(address member) external onlyRegistered(msg.sender) {
