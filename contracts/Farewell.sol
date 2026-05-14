@@ -202,6 +202,26 @@ contract Farewell is FarewellStorage {
         return (u.encryptedName.limbs, u.encryptedName.byteLen);
     }
 
+    /// @notice Batch-get encrypted name handles for multiple users (single RPC call)
+    /// @dev Skips unregistered users (returns empty limbs and zero byteLen for them)
+    function getEncryptedNames(address[] calldata userAddrs)
+        external
+        view
+        returns (euint256[][] memory allLimbs, uint32[] memory allByteLens)
+    {
+        uint256 len = userAddrs.length;
+        allLimbs = new euint256[][](len);
+        allByteLens = new uint32[](len);
+        for (uint256 i = 0; i < len; ) {
+            User storage u = users[userAddrs[i]];
+            if (u.lastCheckIn != 0) {
+                allLimbs[i] = u.encryptedName.limbs;
+                allByteLens[i] = u.encryptedName.byteLen;
+            }
+            unchecked { ++i; }
+        }
+    }
+
     /// @notice Update the user's encrypted display name
     function setEncryptedName(
         externalEuint256[] calldata nameLimbs,
