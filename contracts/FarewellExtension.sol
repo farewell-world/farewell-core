@@ -145,6 +145,52 @@ contract FarewellExtension is FarewellStorage {
         }
     }
 
+    /// @notice Internal helper to clean up pending invitation state
+    /// @param inviter The invitation sender
+    /// @param invitee The invitation recipient
+    function _removePendingInvitation(address inviter, address invitee) internal {
+        pendingInvitations[inviter][invitee] = false;
+
+        // Swap-and-pop inviter from pendingInviters[invitee]
+        address[] storage inviters = pendingInviters[invitee];
+        uint256 len = inviters.length;
+        for (uint256 i = 0; i < len; ) {
+            if (inviters[i] == inviter) {
+                if (i < len - 1) {
+                    inviters[i] = inviters[len - 1];
+                }
+                inviters.pop();
+                break;
+            }
+            unchecked { ++i; }
+        }
+
+        // Swap-and-pop invitee from pendingSentInvitees[inviter]
+        address[] storage invitees = pendingSentInvitees[inviter];
+        len = invitees.length;
+        for (uint256 i = 0; i < len; ) {
+            if (invitees[i] == invitee) {
+                if (i < len - 1) {
+                    invitees[i] = invitees[len - 1];
+                }
+                invitees.pop();
+                break;
+            }
+            unchecked { ++i; }
+        }
+    }
+
+    /// @notice Grant FHE decryption access on a user's encrypted name limbs
+    /// @dev Mirrors _allowNameLimbs in Farewell.sol — needed because FarewellExtension
+    ///      does not inherit Farewell (it runs via delegatecall with shared storage).
+    function _allowNameLimbsExt(address user, address allowee) internal {
+        EncryptedString storage enc = users[user].encryptedName;
+        for (uint256 i = 0; i < enc.limbs.length; ) {
+            FHE.allow(enc.limbs[i], allowee);
+            unchecked { ++i; }
+        }
+    }
+
     /// @notice Apply a majority-alive council decision: reset check-in and mark finalAlive
     /// @param user The user whose status is being decided
     /// @param u Storage reference to the user
@@ -542,6 +588,34 @@ contract FarewellExtension is FarewellStorage {
     /// @return True if the user has encrypted voting enabled
     function getEncryptedVoting(address user) external view onlyRegistered(user) returns (bool) {
         return users[user].encryptedVoting;
+    }
+
+    /// @notice Toggle whether the caller accepts council invitations (default: false)
+    /// @param accepting Whether to accept invitations
+    function setAcceptingInvitations(bool accepting) external onlyRegistered(msg.sender) {
+        acceptingInvitations[msg.sender] = accepting;
+        emit AcceptingInvitationsChanged(msg.sender, accepting);
+    }
+
+    /// @notice Check if a user is accepting council invitations
+    /// @param user The user address
+    /// @return True if the user accepts invitations
+    function getAcceptingInvitations(address user) external view returns (bool) {
+        return acceptingInvitations[user];
+    }
+
+    /// @notice Get list of inviters with pending invitations for an invitee
+    /// @param invitee The invitee address
+    /// @return Array of inviter addresses
+    function getPendingInvitationsFor(address invitee) external view returns (address[] memory) {
+        return pendingInviters[invitee];
+    }
+
+    /// @notice Get list of invitees with pending invitations sent by an inviter
+    /// @param inviter The inviter address
+    /// @return Array of invitee addresses
+    function getPendingSentInvitations(address inviter) external view returns (address[] memory) {
+        return pendingSentInvitees[inviter];
     }
 
     // --- Rewards ---
