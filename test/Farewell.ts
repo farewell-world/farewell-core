@@ -141,6 +141,20 @@ describe("Farewell", function () {
     ({ FarewellContract, FarewellContractAddress } = await deployFixture());
   });
 
+  /** Helper: complete the full invitation flow so `member` becomes an active council member of `inviter`. */
+  async function addCouncilMemberFull(
+    contract: FarewellFull,
+    inviter: HardhatEthersSigner,
+    member: HardhatEthersSigner,
+  ) {
+    let tx = await contract.connect(member).setAcceptingInvitations(true);
+    await tx.wait();
+    tx = await contract.connect(inviter).addCouncilMember(member.address);
+    await tx.wait();
+    tx = await contract.connect(member).acceptCouncilInvitation(inviter.address);
+    await tx.wait();
+  }
+
   it("should work", async function () {
     console.log(`address of user owner is ${signers.owner.address}`);
     console.log(`address of user alice is ${signers.alice.address}`);
@@ -853,8 +867,7 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
       expect(members.length).to.eq(1);
@@ -865,27 +878,20 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      // Add 20 members (the maximum) - use signers + random wallets
+      // Add 20 members (the maximum) using hardhat signers 1-20
       const allSigners = await ethers.getSigners();
-      const availableSigners = allSigners.length - 1; // exclude owner at index 0
-      for (let i = 1; i <= availableSigners && i <= 20; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
-      }
-      // Fill remaining slots with random wallet addresses
-      for (let i = availableSigners + 1; i <= 20; i++) {
-        const randomWallet = ethers.Wallet.createRandom();
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(randomWallet.address);
-        await tx.wait();
+      for (let i = 1; i <= 20; i++) {
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
       expect(members.length).to.eq(20);
 
-      // 21st member should be rejected
-      const extraWallet = ethers.Wallet.createRandom();
+      // 21st member should be rejected — opt in first, then addCouncilMember reverts
+      tx = await FarewellContract.connect(allSigners[21]).setAcceptingInvitations(true);
+      await tx.wait();
       await expect(
-        FarewellContract.connect(signers.owner).addCouncilMember(extraWallet.address),
+        FarewellContract.connect(signers.owner).addCouncilMember(allSigners[21].address),
       ).to.be.revertedWithCustomError(FarewellContract, "CouncilFull");
     });
 
@@ -894,8 +900,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add member
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Remove member
       tx = await FarewellContract.connect(signers.owner).removeCouncilMember(signers.alice.address);
@@ -913,11 +918,8 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add bob as council member for both owner and alice
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.bob.address);
-      await tx.wait();
-
-      tx = await FarewellContract.connect(signers.alice).addCouncilMember(signers.bob.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.bob);
+      await addCouncilMemberFull(FarewellContract, signers.alice, signers.bob);
 
       // Check reverse index
       const usersForBob = await FarewellContract.getUsersForCouncilMember(signers.bob.address);
@@ -959,8 +961,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add council member
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Advance to grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
@@ -983,8 +984,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add council member
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Try to vote before grace period (should fail)
       await expect(
@@ -1001,8 +1001,7 @@ describe("Farewell", function () {
       // Add 3 council members
       const allSigners = await ethers.getSigners();
       for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       // Advance to grace period
@@ -1037,8 +1036,7 @@ describe("Farewell", function () {
       // Add 3 council members
       const allSigners = await ethers.getSigners();
       for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       // Advance to grace period
@@ -1069,8 +1067,7 @@ describe("Farewell", function () {
       // Add 3 council members
       const allSigners = await ethers.getSigners();
       for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       // Advance to grace period
@@ -1733,8 +1730,7 @@ describe("Farewell", function () {
       // Add 3 council members
       const allSigners = await ethers.getSigners();
       for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       // Advance time to grace period
@@ -1940,8 +1936,7 @@ describe("Farewell", function () {
       // Add 3 council members
       const allSigners = await ethers.getSigners();
       for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       // Advance to grace period
@@ -2125,14 +2120,15 @@ describe("Farewell", function () {
 
       // Add council members before grace
       const allSigners = await ethers.getSigners();
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[1].address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[1]);
 
       // Advance to grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
       await ethers.provider.send("evm_mine", []);
 
-      // Cannot add council members during grace
+      // Cannot add council members during grace (opt in first so the revert is CouncilFrozenDuringGrace, not InvitationsNotAccepted)
+      tx = await FarewellContract.connect(allSigners[2]).setAcceptingInvitations(true);
+      await tx.wait();
       await expect(
         FarewellContract.connect(signers.owner).addCouncilMember(allSigners[2].address),
       ).to.be.revertedWithCustomError(FarewellContract, "CouncilFrozenDuringGrace");
@@ -2309,8 +2305,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add council member
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Advance to grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
@@ -2334,8 +2329,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add council member
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Advance to grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
@@ -2361,8 +2355,7 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Advance to grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + 1]);
@@ -2408,8 +2401,7 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Do NOT advance time -- still in alive period
       const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.alice.address);
@@ -2429,8 +2421,7 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Advance past grace period
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
@@ -2453,8 +2444,7 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
 
       // Advance past grace and mark deceased
       await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
@@ -2484,8 +2474,7 @@ describe("Farewell", function () {
       // Use 3 council members so majority = 2, preventing auto-trigger on single vote
       const allSigners = await ethers.getSigners();
       for (let i = 1; i <= 3; i++) {
-        tx = await FarewellContract.connect(signers.owner).addCouncilMember(allSigners[i].address);
-        await tx.wait();
+        await addCouncilMemberFull(FarewellContract, signers.owner, allSigners[i]);
       }
 
       // Advance to grace period
@@ -2530,10 +2519,8 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.alice.address);
-      await tx.wait();
-      tx = await FarewellContract.connect(signers.owner).addCouncilMember(signers.bob.address);
-      await tx.wait();
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.alice);
+      await addCouncilMemberFull(FarewellContract, signers.owner, signers.bob);
 
       // Initially all zeros
       let status = await FarewellContract.getEncryptedGraceVoteStatus(signers.owner.address);
