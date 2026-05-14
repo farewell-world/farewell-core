@@ -35,6 +35,7 @@ const config: HardhatUserConfig = {
     hardhat: {
       accounts: {
         mnemonic: MNEMONIC,
+        count: 25,
       },
       chainId: 31337,
       // EIP-170 enforces 24KB contract size on production networks.
