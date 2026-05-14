@@ -628,7 +628,7 @@ contract FarewellExtension is FarewellStorage {
 
     /// @notice Toggle whether the caller accepts council invitations (default: false)
     /// @param accepting Whether to accept invitations
-    function setAcceptingInvitations(bool accepting) external onlyRegistered(msg.sender) {
+    function setAcceptingInvitations(bool accepting) external {
         acceptingInvitations[msg.sender] = accepting;
         emit AcceptingInvitationsChanged(msg.sender, accepting);
     }
