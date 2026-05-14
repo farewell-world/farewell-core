@@ -33,33 +33,24 @@ contract FarewellExtension is FarewellStorage {
         return block.timestamp > checkInEnd && !(block.timestamp > graceEnd);
     }
 
-    /// @notice Add a council member (no stake required, max 20 members)
-    /// @dev FHE.allow() grants to council members for the user's encrypted name
-    ///      are permanent. If a council member is later removed, they retain FHE
-    ///      decryption access to the name limbs (FHEVM limitation).
-    /// @param member The address to add as council member
+    /// @notice Send a council invitation (replaces immediate add)
+    /// @dev Creates a pending invitation. The invitee must call acceptCouncilInvitation to join.
+    ///      Invitee must have acceptingInvitations enabled, otherwise reverts.
+    /// @param member The address to invite as council member
     function addCouncilMember(address member) external onlyRegistered(msg.sender) {
         if (_isInGracePeriod(users[msg.sender])) revert CouncilFrozenDuringGrace();
         if (member == address(0)) revert InvalidMember();
         if (member == msg.sender) revert CannotAddSelf();
-
+        if (!acceptingInvitations[member]) revert InvitationsNotAccepted();
         if (councilMembers[msg.sender][member]) revert AlreadyCouncilMember();
+        if (pendingInvitations[msg.sender][member]) revert InvitationAlreadyPending();
         if (!(councils[msg.sender].length < MAX_COUNCIL_SIZE)) revert CouncilFull();
 
-        councils[msg.sender].push(CouncilMember({member: member, joinedAt: uint64(block.timestamp)}));
-        councilMembers[msg.sender][member] = true;
+        pendingInvitations[msg.sender][member] = true;
+        pendingInviters[member].push(msg.sender);
+        pendingSentInvitees[msg.sender].push(member);
 
-        // Add to reverse index
-        memberToUsers[member].push(msg.sender);
-
-        // Allow council member to decrypt user's encrypted name
-        EncryptedString storage enc = users[msg.sender].encryptedName;
-        for (uint256 i = 0; i < enc.limbs.length; ) {
-            FHE.allow(enc.limbs[i], member);
-            unchecked { ++i; }
-        }
-
-        emit CouncilMemberAdded(msg.sender, member);
+        emit CouncilInvitationSent(msg.sender, member);
     }
 
     /// @notice Remove a council member (can be called by user only)
