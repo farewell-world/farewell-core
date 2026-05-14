@@ -220,6 +220,9 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     error InvalidRewardType();
     error NotAlive();
     error DirectEthNotAccepted();
+    error InvitationAlreadyPending();
+    error NoSuchInvitation();
+    error InvitationsNotAccepted();
     error ConfidentialTransferFailed();
     error ZeroAddress();
 
@@ -264,6 +267,18 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     mapping(address user => mapping(address token => euint64)) internal lockedConfidentialRewards;
     /// @notice Pending unshielded claims awaiting KMS decryption
     mapping(bytes32 claimKey => PendingUnshieldedClaim) internal pendingUnshieldedClaims;
+
+    /// @notice Whether a user accepts council invitations (default: false)
+    mapping(address => bool) public acceptingInvitations;
+
+    /// @notice Pending invitations: inviter → invitee → true if pending
+    mapping(address => mapping(address => bool)) internal pendingInvitations;
+
+    /// @notice Reverse index: invitee → list of inviters with pending invitations
+    mapping(address => address[]) internal pendingInviters;
+
+    /// @notice Forward index: inviter → list of invitees with pending invitations
+    mapping(address => address[]) internal pendingSentInvitees;
 
     // -----------------------
     // Events
@@ -419,6 +434,31 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     /// @param user The user's address
     /// @param enabled Whether encrypted voting is now enabled
     event EncryptedVotingChanged(address indexed user, bool indexed enabled);
+
+    /// @notice Emitted when a council invitation is sent
+    /// @param user The inviter's address
+    /// @param member The invited address
+    event CouncilInvitationSent(address indexed user, address indexed member);
+
+    /// @notice Emitted when a council invitation is cancelled by the inviter
+    /// @param user The inviter's address
+    /// @param member The invitee's address
+    event CouncilInvitationCancelled(address indexed user, address indexed member);
+
+    /// @notice Emitted when a council invitation is accepted by the invitee
+    /// @param user The inviter's address
+    /// @param member The invitee's address
+    event CouncilInvitationAccepted(address indexed user, address indexed member);
+
+    /// @notice Emitted when a council invitation is declined by the invitee
+    /// @param user The inviter's address
+    /// @param member The invitee's address
+    event CouncilInvitationDeclined(address indexed user, address indexed member);
+
+    /// @notice Emitted when a user changes their acceptingInvitations setting
+    /// @param user The user's address
+    /// @param accepting Whether the user now accepts invitations
+    event AcceptingInvitationsChanged(address indexed user, bool indexed accepting);
 
     // solhint-disable-next-line no-empty-blocks
     constructor(address initialOwner) Ownable(initialOwner) {}
