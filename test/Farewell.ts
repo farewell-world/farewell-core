@@ -49,7 +49,7 @@ async function deployFixture() {
 // --- helpers ---
 const toBytes = (s: string) => ethers.toUtf8Bytes(s);
 
-// utf8 → 32B-chunks (right-padded with zeros), returned as BigInt words
+// utf8 -> 32B-chunks (right-padded with zeros), returned as BigInt words
 // Pads to MAX_EMAIL_BYTE_LEN (224 bytes = 7 limbs) to prevent length leakage
 const MAX_EMAIL_BYTE_LEN = 224;
 
@@ -126,6 +126,37 @@ const emailBytes2 = toBytes(email2);
 const payloadBytes2 = toBytes(payload2);
 const emailWords2 = chunk32ToU256Words(emailBytes2);
 
+// --- Encrypted input helpers ---
+
+/** Build encrypted input for addMessage: 7 email limbs + skShare(128) + emailByteLen(32) */
+async function encryptMessageInput(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  emailWords: bigint[],
+  sk: bigint,
+  emailBytesLength: number,
+) {
+  const enc = fhevm.createEncryptedInput(contractAddress, signer.address);
+  for (const w of emailWords) enc.add256(w);
+  enc.add128(sk);
+  enc.add32(emailBytesLength);
+  const encrypted = await enc.encrypt();
+  const nLimbs = emailWords.length;
+  return {
+    limbsHandles: encrypted.handles.slice(0, nLimbs),
+    skShareHandle: encrypted.handles[nLimbs],         // index 7
+    emailByteLenHandle: encrypted.handles[nLimbs + 1], // index 8
+    inputProof: encrypted.inputProof,
+    handles: encrypted.handles,
+    nLimbs,
+  };
+}
+
+/** The addMessage selector with encrypted emailByteLen (bytes32 instead of uint32) */
+const ADD_MSG_SEL = "addMessage(bytes32[],bytes32,bytes32,bytes,bytes,string,string)";
+/** The addMessageWithReward selector with encrypted emailByteLen */
+const ADD_MSG_REWARD_SEL = "addMessageWithReward(bytes32[],bytes32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)";
+
 describe("Farewell", function () {
   let signers: Signers;
   let FarewellContract: FarewellFull;
@@ -175,22 +206,13 @@ describe("Farewell", function () {
     // We are going to use the same share for all messages
     // Add a message
     {
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      // 1) add all email limbs as uint256
-      for (const w of emailWords1) enc.add256(w);
-      // 2) add the skShare as uint128
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
-      const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length, // emailByteLen
-        skShareHandle, // encSkShare (externalEuint128)
-        payloadBytes1, // public payload
-        encrypted.inputProof,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes1,
+        e.inputProof,
         "",
         "",
       );
@@ -201,23 +223,13 @@ describe("Farewell", function () {
     }
     {
       // Add another  message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      // 1) add all email limbs as uint256
-      for (const w of emailWords2) enc.add256(w);
-      // 2) add the skShare as uint128
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords2.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
-      const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes2.length, // emailByteLen
-        skShareHandle, // encSkShare (externalEuint128)
-        payloadBytes2, // public payload
-        encrypted.inputProof,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes2,
+        e.inputProof,
         "",
         "",
       );
@@ -238,23 +250,13 @@ describe("Farewell", function () {
     // We are going to use the same share for all messages
     // Add a message
     {
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      // 1) add all email limbs as uint256
-      for (const w of emailWords1) enc.add256(w);
-      // 2) add the skShare as uint128
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
-      const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length, // emailByteLen
-        skShareHandle, // encSkShare (externalEuint128)
-        payloadBytes1, // public payload
-        encrypted.inputProof,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes1,
+        e.inputProof,
         "",
         "",
       );
@@ -265,23 +267,13 @@ describe("Farewell", function () {
     }
     {
       // Add another  message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      // 1) add all email limbs as uint256
-      for (const w of emailWords2) enc.add256(w);
-      // 2) add the skShare as uint128
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords2.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs); // externalEuint256[]
-      const skShareHandle = encrypted.handles[nLimbs]; // externalEuint128
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length, // emailByteLen
-        skShareHandle, // encSkShare (externalEuint128)
-        payloadBytes1, // public payload
-        encrypted.inputProof,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes1,
+        e.inputProof,
         "",
         "",
       );
@@ -350,8 +342,16 @@ describe("Farewell", function () {
     }
     const chunks = limbWords.map(u256ToBytes32);
 
+    // Decrypt the encrypted emailByteLen handle
+    const decryptedEmailByteLen = await fhevm.userDecryptEuint(
+      FhevmType.euint32,
+      encryptedClaimedMessage.emailByteLen,
+      FarewellContractAddress,
+      signers.alice,
+    );
+
     // - stitch + trim + utf8
-    const emailBytes = concatAndTrim(chunks, Number(encryptedClaimedMessage.emailByteLen));
+    const emailBytes = concatAndTrim(chunks, Number(decryptedEmailByteLen));
     const recoveredEmail = utf8Decode(emailBytes);
 
     expect(recoveredEmail).to.equal(email1);
@@ -364,38 +364,49 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      // Name should have zero byteLen initially
+      // Name should have zero byteLen initially (uninitialized handle = zero hash)
       let [, nameByteLen] = await FarewellContract.getEncryptedName(signers.owner.address);
-      expect(nameByteLen).to.eq(0);
+      expect(nameByteLen).to.eq(ethers.ZeroHash);
 
-      // Set name — encrypt "Alice"
+      // Set name -- encrypt "Alice"
       const nameLimbs = nameToLimbs("Alice");
       const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
       for (const w of nameLimbs) nameEnc.add256(w);
+      nameEnc.add32(5); // "Alice" is 5 bytes
       const nameEncResult = await nameEnc.encrypt();
+      const nNameLimbs = nameLimbs.length;
 
       tx = await FarewellContract.connect(signers.owner).setEncryptedName(
-        nameEncResult.handles,
-        5, // "Alice" is 5 bytes
+        nameEncResult.handles.slice(0, nNameLimbs),
+        nameEncResult.handles[nNameLimbs], // encrypted nameByteLen handle
         nameEncResult.inputProof,
       );
       await tx.wait();
 
       [, nameByteLen] = await FarewellContract.getEncryptedName(signers.owner.address);
-      expect(nameByteLen).to.eq(5);
+      // nameByteLen is now an FHE handle -- decrypt to verify
+      const decryptedByteLen = await fhevm.userDecryptEuint(
+        FhevmType.euint32,
+        nameByteLen,
+        FarewellContractAddress,
+        signers.owner,
+      );
+      expect(decryptedByteLen).to.eq(5);
     });
 
     it("should allow registration with encrypted name", async function () {
       const nameLimbs = nameToLimbs("Charlie");
       const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
       for (const w of nameLimbs) nameEnc.add256(w);
+      nameEnc.add32(7); // "Charlie" is 7 bytes
       const nameEncResult = await nameEnc.encrypt();
+      const nNameLimbs = nameLimbs.length;
 
       const tx = await FarewellContract.connect(signers.owner)[
-        "register(bytes32[],uint32,bytes,uint64,uint64)"
+        "register(bytes32[],bytes32,bytes,uint64,uint64)"
       ](
-        nameEncResult.handles,
-        7, // "Charlie" is 7 bytes
+        nameEncResult.handles.slice(0, nNameLimbs),
+        nameEncResult.handles[nNameLimbs], // encrypted nameByteLen handle
         nameEncResult.inputProof,
         86400n,
         86400n,
@@ -403,7 +414,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       const [, byteLen] = await FarewellContract.getEncryptedName(signers.owner.address);
-      expect(byteLen).to.eq(7);
+      const decryptedByteLen = await fhevm.userDecryptEuint(
+        FhevmType.euint32,
+        byteLen,
+        FarewellContractAddress,
+        signers.owner,
+      );
+      expect(decryptedByteLen).to.eq(7);
     });
 
     it("should revert if user is not registered", async function () {
@@ -411,11 +428,13 @@ describe("Farewell", function () {
         const nameLimbs = nameToLimbs("Test");
         const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
         for (const w of nameLimbs) nameEnc.add256(w);
+        nameEnc.add32(4);
         const nameEncResult = await nameEnc.encrypt();
+        const nNameLimbs = nameLimbs.length;
 
         const tx = await FarewellContract.connect(signers.owner).setEncryptedName(
-          nameEncResult.handles,
-          4,
+          nameEncResult.handles.slice(0, nNameLimbs),
+          nameEncResult.handles[nNameLimbs],
           nameEncResult.inputProof,
         );
         await tx.wait();
@@ -433,21 +452,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add a message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length,
-        skShareHandle,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -476,21 +487,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add a message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length,
-        skShareHandle,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -515,21 +518,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add a message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length,
-        skShareHandle,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -566,19 +561,14 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to add message (should fail - user is deceased)
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
       await expect(
-        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes1.length,
-          encrypted.handles[nLimbs],
+        FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
         ),
@@ -591,21 +581,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add a message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length,
-        skShareHandle,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -630,17 +612,13 @@ describe("Farewell", function () {
 
       // Add message 0
       {
-        const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-        for (const w of emailWords1) enc.add256(w);
-        enc.add128(skShare);
-        const encrypted = await enc.encrypt();
-        const nLimbs = emailWords1.length;
-        tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes1.length,
-          encrypted.handles[nLimbs],
+        const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+        tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
         );
@@ -649,17 +627,13 @@ describe("Farewell", function () {
 
       // Add message 1
       {
-        const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-        for (const w of emailWords2) enc.add256(w);
-        enc.add128(skShare);
-        const encrypted = await enc.encrypt();
-        const nLimbs = emailWords2.length;
-        tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes2.length,
-          encrypted.handles[nLimbs],
+        const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
+        tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes2,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
         );
@@ -668,17 +642,13 @@ describe("Farewell", function () {
 
       // Add message 2
       {
-        const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-        for (const w of emailWords1) enc.add256(w);
-        enc.add128(skShare);
-        const encrypted = await enc.encrypt();
-        const nLimbs = emailWords1.length;
-        tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes1.length,
-          encrypted.handles[nLimbs],
+        const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+        tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
         );
@@ -726,29 +696,6 @@ describe("Farewell", function () {
       ).to.be.revertedWithCustomError(FarewellContract, "GracePeriodTooShort");
     });
 
-    it("should reject encrypted name with byteLen exceeding MAX_NAME_BYTE_LEN", async function () {
-      const nameLimbs = nameToLimbs("test");
-      const nameEnc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of nameLimbs) nameEnc.add256(w);
-      const nameEncResult = await nameEnc.encrypt();
-
-      try {
-        const tx = await FarewellContract.connect(signers.owner)[
-          "register(bytes32[],uint32,bytes,uint64,uint64)"
-        ](
-          nameEncResult.handles,
-          129, // exceeds MAX_NAME_BYTE_LEN (128)
-          nameEncResult.inputProof,
-          86400n,
-          86400n,
-        );
-        await tx.wait();
-        expect.fail("Expected transaction to revert");
-      } catch (e: unknown) {
-        expect(e).to.not.be.null;
-      }
-    });
-
     it("should reject claim with invalid index (out of bounds)", async function () {
       // Register and mark deceased
       const checkInPeriod = 86400; // 1 day
@@ -757,21 +704,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add a message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length,
-        skShareHandle,
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -795,70 +734,35 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Create encrypted input with correct padding (7 limbs for 224 bytes)
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
       const nLimbs = emailWords1.length;
       expect(nLimbs).to.eq(7); // Should be 7 limbs for 224 bytes
 
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
       // This should work with padded email
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        limbsHandles,
-        emailBytes1.length, // original length
-        skShareHandle,
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
       await tx.wait();
 
       // Try with wrong number of limbs (should fail)
-      const wrongLimbs = limbsHandles.slice(0, 4); // Only 4 limbs instead of 7
+      const wrongLimbs = e.limbsHandles.slice(0, 4); // Only 4 limbs instead of 7
       await expect(
-        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
+        FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
           wrongLimbs,
-          emailBytes1.length,
-          skShareHandle,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
         ),
       ).to.be.revertedWithCustomError(FarewellContract, "LimbsMismatch");
-    });
-
-    it("should reject email longer than 224 bytes", async function () {
-      const tx = await FarewellContract.connect(signers.owner)["register()"]();
-      await tx.wait();
-
-      // Use valid encryption (7 limbs) but pass emailByteLen > MAX_EMAIL_BYTE_LEN
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-
-      const nLimbs = emailWords1.length;
-      const limbsHandles = encrypted.handles.slice(0, nLimbs);
-      const skShareHandle = encrypted.handles[nLimbs];
-
-      // Should fail because emailByteLen (225) > MAX_EMAIL_BYTE_LEN (224)
-      await expect(
-        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-          limbsHandles,
-          225,
-          skShareHandle,
-          payloadBytes1,
-          encrypted.inputProof,
-          "",
-          "",
-        ),
-      ).to.be.revertedWithCustomError(FarewellContract, "EmailTooLong");
     });
   });
 
@@ -887,7 +791,7 @@ describe("Farewell", function () {
       const [members] = await FarewellContract.getCouncilMembers(signers.owner.address);
       expect(members.length).to.eq(20);
 
-      // 21st member should be rejected — opt in first, then addCouncilMember reverts
+      // 21st member should be rejected -- opt in first, then addCouncilMember reverts
       tx = await FarewellContract.connect(allSigners[21]).setAcceptingInvitations(true);
       await tx.wait();
       await expect(
@@ -1093,18 +997,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add and revoke message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -1132,18 +1031,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -1151,22 +1045,19 @@ describe("Farewell", function () {
 
       // Edit message
       const newPayload = toBytes("updated payload");
-      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords2) enc2.add256(w);
-      enc2.add128(skShare);
-      const encrypted2 = await enc2.encrypt();
+      const e2 = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
 
       tx = await FarewellContract.connect(signers.owner).editMessage(
         0,
-        encrypted2.handles.slice(0, nLimbs),
-        emailBytes2.length,
-        encrypted2.handles[nLimbs],
+        e2.limbsHandles,
+        e2.emailByteLenHandle,
+        e2.skShareHandle,
         newPayload,
-        encrypted2.inputProof,
+        e2.inputProof,
         "Updated message",
         "",
         [],
-        0,
+        ethers.ZeroHash,
         "0x",
       );
       await tx.wait();
@@ -1184,18 +1075,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -1208,23 +1094,20 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to edit (should fail)
-      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords2) enc2.add256(w);
-      enc2.add128(skShare);
-      const encrypted2 = await enc2.encrypt();
+      const e2 = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
 
       await expect(
         FarewellContract.connect(signers.owner).editMessage(
           0,
-          encrypted2.handles.slice(0, nLimbs),
-          emailBytes2.length,
-          encrypted2.handles[nLimbs],
+          e2.limbsHandles,
+          e2.emailByteLenHandle,
+          e2.skShareHandle,
           payloadBytes2,
-          encrypted2.inputProof,
+          e2.inputProof,
           "",
           "",
           [],
-          0,
+          ethers.ZeroHash,
           "0x",
         ),
       ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
@@ -1237,18 +1120,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message, mark deceased, and claim
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -1262,23 +1140,20 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to edit (should fail)
-      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords2) enc2.add256(w);
-      enc2.add128(skShare);
-      const encrypted2 = await enc2.encrypt();
+      const e2 = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
 
       await expect(
         FarewellContract.connect(signers.owner).editMessage(
           0,
-          encrypted2.handles.slice(0, nLimbs),
-          emailBytes2.length,
-          encrypted2.handles[nLimbs],
+          e2.limbsHandles,
+          e2.emailByteLenHandle,
+          e2.skShareHandle,
           payloadBytes2,
-          encrypted2.inputProof,
+          e2.inputProof,
           "",
           "",
           [],
-          0,
+          ethers.ZeroHash,
           "0x",
         ),
       ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
@@ -1306,11 +1181,7 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message with ETH reward using addMessageWithReward
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
@@ -1318,14 +1189,12 @@ describe("Farewell", function () {
 
       // addMessageWithReward now takes rewardToken and rewardAmount params
       // For ETH: rewardToken = address(0), rewardAmount ignored (uses msg.value)
-      tx = await FarewellContract.connect(signers.owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-      ](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
         [recipientEmailHash],
@@ -1344,7 +1213,7 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
       await tx.wait();
 
-      // Prove delivery with matching public signals
+      // Prove delivery with matching public signals (4 signals: recipient, dkim, content, sender)
       const zkProof = {
         pA: [0n, 0n] as [bigint, bigint],
         pB: [
@@ -1352,7 +1221,7 @@ describe("Farewell", function () {
           [0n, 0n],
         ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
-        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
+        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(signers.owner.address)],
       };
       tx = await FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof);
       await tx.wait();
@@ -1385,23 +1254,17 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message with ETH reward
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
 
-      tx = await FarewellContract.connect(signers.owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-      ](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
         [recipientEmailHash],
@@ -1427,7 +1290,7 @@ describe("Farewell", function () {
           [0n, 0n],
         ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
-        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
+        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(signers.owner.address)],
       };
       tx = await FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof);
       await tx.wait();
@@ -1446,24 +1309,18 @@ describe("Farewell", function () {
       const tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
 
       await expect(
-        FarewellContract.connect(signers.owner)[
-          "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-        ](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes1.length,
-          encrypted.handles[nLimbs],
+        FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
           [recipientEmailHash],
@@ -1479,25 +1336,19 @@ describe("Farewell", function () {
       const tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
       const fakeToken = "0x0000000000000000000000000000000000000001";
 
       await expect(
-        FarewellContract.connect(signers.owner)[
-          "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-        ](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes1.length,
-          encrypted.handles[nLimbs],
+        FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
           [recipientEmailHash],
@@ -1514,24 +1365,18 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message with ETH reward
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
       const rewardAmount = ethers.parseEther("0.5");
 
-      tx = await FarewellContract.connect(signers.owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-      ](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
         [recipientEmailHash],
@@ -1565,24 +1410,18 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register()"]();
       await tx.wait();
 
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
       const rewardAmount = ethers.parseEther("0.05");
 
-      tx = await FarewellContract.connect(signers.owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-      ](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
         [recipientEmailHash],
@@ -1655,24 +1494,18 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message with ETH reward
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
       const rewardAmount = ethers.parseEther("0.5");
 
-      tx = await FarewellContract.connect(signers.owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-      ](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "Test message",
         "",
         [recipientEmailHash],
@@ -1701,7 +1534,7 @@ describe("Farewell", function () {
           [0n, 0n],
         ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
-        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)],
+        publicSignals: [BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(signers.owner.address)],
       };
       tx = await FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof);
       await tx.wait();
@@ -1760,18 +1593,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "Original message",
         "",
       );
@@ -1779,22 +1607,19 @@ describe("Farewell", function () {
 
       // Edit message
       const newPayload = toBytes("edited payload");
-      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords2) enc2.add256(w);
-      enc2.add128(skShare);
-      const encrypted2 = await enc2.encrypt();
+      const e2 = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
 
       tx = await FarewellContract.connect(signers.owner).editMessage(
         0,
-        encrypted2.handles.slice(0, nLimbs),
-        emailBytes2.length,
-        encrypted2.handles[nLimbs],
+        e2.limbsHandles,
+        e2.emailByteLenHandle,
+        e2.skShareHandle,
         newPayload,
-        encrypted2.inputProof,
+        e2.inputProof,
         "Edited message",
         "",
         [],
-        0,
+        ethers.ZeroHash,
         "0x",
       );
       await tx.wait();
@@ -1828,11 +1653,7 @@ describe("Farewell", function () {
       let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
       await tx.wait();
 
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       const recipientEmailHash = ethers.keccak256(ethers.toUtf8Bytes("test@gmail.com"));
       const payloadContentHash = ethers.keccak256(payloadBytes1);
@@ -1841,14 +1662,12 @@ describe("Farewell", function () {
       tx = await FarewellContract.connect(signers.owner).setTrustedDkimKey(ethers.ZeroHash, 12345n, true);
       await tx.wait();
 
-      tx = await FarewellContract.connect(signers.owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
-      ](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_REWARD_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
         [recipientEmailHash],
@@ -1875,7 +1694,7 @@ describe("Farewell", function () {
           [0n, 0n],
         ] as [[bigint, bigint], [bigint, bigint]],
         pC: [0n, 0n] as [bigint, bigint],
-        publicSignals: [BigInt(recipientEmailHash), 12345n, BigInt(payloadContentHash)],
+        publicSignals: [BigInt(recipientEmailHash), 12345n, BigInt(payloadContentHash), BigInt(signers.owner.address)],
       };
       await expect(
         FarewellContract.connect(signers.alice).proveDelivery(signers.owner.address, 0, 0, zkProof),
@@ -1889,18 +1708,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -2010,18 +1824,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "",
         "",
       );
@@ -2033,22 +1842,19 @@ describe("Farewell", function () {
       expect(await FarewellContract.messageHashes(originalHash)).to.eq(true);
 
       // Edit message
-      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords2) enc2.add256(w);
-      enc2.add128(skShare);
-      const encrypted2 = await enc2.encrypt();
+      const e2 = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords2, skShare, emailBytes2.length);
 
       tx = await FarewellContract.connect(signers.owner).editMessage(
         0,
-        encrypted2.handles.slice(0, nLimbs),
-        emailBytes2.length,
-        encrypted2.handles[nLimbs],
+        e2.limbsHandles,
+        e2.emailByteLenHandle,
+        e2.skShareHandle,
         toBytes("new payload"),
-        encrypted2.inputProof,
+        e2.inputProof,
         "new public msg",
         "",
         [],
-        0,
+        ethers.ZeroHash,
         "0x",
       );
       await tx.wait();
@@ -2067,18 +1873,13 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Add message with public message
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
-      tx = await FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-        encrypted.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted.handles[nLimbs],
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
         payloadBytes1,
-        encrypted.inputProof,
+        e.inputProof,
         "Hello world",
         "",
       );
@@ -2088,22 +1889,19 @@ describe("Farewell", function () {
       expect(msg.publicMessage).to.eq("Hello world");
 
       // Edit with empty public message - should clear it
-      const enc2 = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc2.add256(w);
-      enc2.add128(skShare);
-      const encrypted2 = await enc2.encrypt();
+      const e2 = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
 
       tx = await FarewellContract.connect(signers.owner).editMessage(
         0,
-        encrypted2.handles.slice(0, nLimbs),
-        emailBytes1.length,
-        encrypted2.handles[nLimbs],
+        e2.limbsHandles,
+        e2.emailByteLenHandle,
+        e2.skShareHandle,
         payloadBytes1,
-        encrypted2.inputProof,
+        e2.inputProof,
         "",
         "",
         [],
-        0,
+        ethers.ZeroHash,
         "0x",
       );
       await tx.wait();
@@ -2152,23 +1950,130 @@ describe("Farewell", function () {
       await tx.wait();
 
       // Try to add message as deceased user
-      const enc = fhevm.createEncryptedInput(FarewellContractAddress, signers.owner.address);
-      for (const w of emailWords1) enc.add256(w);
-      enc.add128(skShare);
-      const encrypted = await enc.encrypt();
-      const nLimbs = emailWords1.length;
-
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
       await expect(
-        FarewellContract.connect(signers.owner)["addMessage(bytes32[],uint32,bytes32,bytes,bytes,string,string)"](
-          encrypted.handles.slice(0, nLimbs),
-          emailBytes1.length,
-          encrypted.handles[nLimbs],
+        FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+          e.limbsHandles,
+          e.emailByteLenHandle,
+          e.skShareHandle,
           payloadBytes1,
-          encrypted.inputProof,
+          e.inputProof,
           "",
           "",
         ),
       ).to.be.revertedWithCustomError(FarewellContract, "UserDeceased");
+    });
+  });
+
+  describe("Delivery Deadline (resetClaim)", function () {
+    const checkInPeriod = 86400; // 1 day
+    const gracePeriod = 86400; // 1 day
+    const DELIVERY_DEADLINE = 72 * 60 * 60; // 72 hours in seconds
+
+    it("should allow resetting a claimed message after delivery deadline", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes1,
+        e.inputProof,
+        "",
+        "",
+      );
+      await tx.wait();
+
+      // Mark deceased and claim
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // Cannot reset before deadline
+      await expect(
+        FarewellContract.connect(signers.bob).resetClaim(signers.owner.address, 0),
+      ).to.be.revertedWithCustomError(FarewellContract, "DeliveryDeadlineNotExpired");
+
+      // Fast-forward past 72 hours
+      await ethers.provider.send("evm_increaseTime", [DELIVERY_DEADLINE + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Reset succeeds
+      tx = await FarewellContract.connect(signers.bob).resetClaim(signers.owner.address, 0);
+      await tx.wait();
+
+      // New claimer can claim (wait for exclusivity to expire first)
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      tx = await FarewellContract.connect(signers.bob).claim(signers.owner.address, 0);
+      await tx.wait();
+    });
+
+    it("should reject resetClaim on unclaimed message", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes1,
+        e.inputProof,
+        "",
+        "",
+      );
+      await tx.wait();
+
+      // Mark deceased but DON'T claim
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+
+      // resetClaim should fail with MessageNotClaimed
+      await expect(
+        FarewellContract.connect(signers.bob).resetClaim(signers.owner.address, 0),
+      ).to.be.revertedWithCustomError(FarewellContract, "MessageNotClaimed");
+    });
+
+    it("should reject resetClaim before deadline", async function () {
+      let tx = await FarewellContract.connect(signers.owner)["register(uint64,uint64)"](checkInPeriod, gracePeriod);
+      await tx.wait();
+
+      // Add message
+      const e = await encryptMessageInput(FarewellContractAddress, signers.owner, emailWords1, skShare, emailBytes1.length);
+      tx = await FarewellContract.connect(signers.owner)[ADD_MSG_SEL](
+        e.limbsHandles,
+        e.emailByteLenHandle,
+        e.skShareHandle,
+        payloadBytes1,
+        e.inputProof,
+        "",
+        "",
+      );
+      await tx.wait();
+
+      // Mark deceased and claim
+      await ethers.provider.send("evm_increaseTime", [checkInPeriod + gracePeriod + 1]);
+      await ethers.provider.send("evm_mine", []);
+      tx = await FarewellContract.connect(signers.alice).markDeceased(signers.owner.address);
+      await tx.wait();
+      tx = await FarewellContract.connect(signers.alice).claim(signers.owner.address, 0);
+      await tx.wait();
+
+      // resetClaim immediately should fail with DeliveryDeadlineNotExpired
+      await expect(
+        FarewellContract.connect(signers.bob).resetClaim(signers.owner.address, 0),
+      ).to.be.revertedWithCustomError(FarewellContract, "DeliveryDeadlineNotExpired");
     });
   });
 
