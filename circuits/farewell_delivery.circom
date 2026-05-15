@@ -12,8 +12,11 @@ include "./hex-decode.circom";
 // Proves that a DKIM-signed email was sent to a specific recipient, with
 // the payload content hash embedded in the signed email body.
 //
-// Public outputs (what the Farewell contract reads as publicSignals):
-//   [0] recipientHash = PoseidonModular(PackBytes(recipientEmail))
+// Public signals (what the Farewell contract reads as publicSignals):
+//   [0] recipientHash = PoseidonModular(PackBytes(recipientEmail), senderAddress)
+//       — salted with the sender's Ethereum address so an attacker who
+//         guesses the email cannot confirm their guess without knowing
+//         which sender to target.
 //       — must match m.recipientEmailHashes[recipientIndex] on-chain.
 //   [1] dkimKeyHash   = EmailVerifier.pubkeyHash
 //       — Poseidon(k/2)(pubkey chunks) as produced natively by zk-email.
@@ -24,6 +27,8 @@ include "./hex-decode.circom";
 //       — the circuit extracts the marker from the DKIM-signed body,
 //         ASCII-hex-decodes 64 lowercase chars into a 256-bit value,
 //         and constrains it to equal the private contentHashIn input.
+//   [3] senderAddress  = Ethereum address of the farewell message sender
+//       — public input (declared via main component's {public [...]}).
 //
 // Parameters:
 //   maxHeadersLength    — header bytes (must be multiple of 64 for SHA
@@ -57,6 +62,9 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
     signal input contentHashIn;
     // Byte offset in emailBody where "Farewell-Hash: 0x" begins.
     signal input contentHashMarkerStart;
+
+    // Ethereum address of the farewell message sender (salt for recipient hash)
+    signal input senderAddress;
 
     // ---- Public outputs ----
     signal output recipientHash;
@@ -108,10 +116,11 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
         packer.in[i] <== recipientReveal.substring[i];
     }
     var packedLen = computeIntChunkLength(maxRecipientBytes);
-    component hasher = PoseidonModular(packedLen);
+    component hasher = PoseidonModular(packedLen + 1);
     for (var i = 0; i < packedLen; i++) {
         hasher.in[i] <== packer.out[i];
     }
+    hasher.in[packedLen] <== senderAddress;
     recipientHash <== hasher.out;
 
     // 4. Bind the content hash to the DKIM-signed email body.
@@ -150,4 +159,4 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
 }
 
 // maxHeadersLength, maxBodyLength, maxRecipientBytes, n, k, markerLen
-component main = FarewellDelivery(1024, 1024, 256, 121, 17, 17);
+component main {public [senderAddress]} = FarewellDelivery(1024, 1024, 256, 121, 17, 17);
