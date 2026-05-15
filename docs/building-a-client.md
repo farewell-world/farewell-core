@@ -162,13 +162,12 @@ async function encryptEmail(
   email: string,
   contractAddress: string,
   userAddress: string,
-): Promise<{ limbHandles: bigint[]; byteLen: number; inputProof: Uint8Array }> {
+): Promise<{ limbHandles: bigint[]; byteLenHandle: bigint; inputProof: Uint8Array }> {
   const padded = padEmail(email);
   const byteLen = new TextEncoder().encode(email).length;
 
   // Split into 32-byte limbs (7 limbs for 224 bytes)
   const numLimbs = Math.ceil(224 / 32); // 7 limbs
-  const limbHandles: bigint[] = [];
 
   const input = fhevmInstance.createEncryptedInput(contractAddress, userAddress);
 
@@ -178,11 +177,14 @@ async function encryptEmail(
     input.add256(value);
   }
 
+  // byteLen is now FHE-encrypted (euint32) to prevent length leakage
+  input.add32(byteLen);
+
   const encrypted = await input.encrypt();
 
   return {
-    limbHandles: encrypted.handles,
-    byteLen,
+    limbHandles: encrypted.handles.slice(0, numLimbs),
+    byteLenHandle: encrypted.handles[numLimbs], // euint32 handle
     inputProof: encrypted.inputProof,
   };
 }
@@ -329,10 +331,10 @@ async function addMessage(
   const contractAddress = await contract.getAddress();
   const userAddress = await contract.runner.getAddress();
 
-  // Encrypt recipient email
+  // Encrypt recipient email (byteLen is now FHE-encrypted)
   const {
     limbHandles,
-    byteLen,
+    byteLenHandle,
     inputProof: emailProof,
   } = await encryptEmail(fhevmInstance, recipientEmail, contractAddress, userAddress);
 
@@ -352,7 +354,7 @@ async function addMessage(
 
   const tx = await contract.addMessage(
     limbHandles,
-    byteLen,
+    byteLenHandle,
     skShareHandle,
     payloadHex,
     inputProof,
@@ -381,7 +383,7 @@ async function addMessageWithReward(
   payload: Uint8Array,
   keyShare: Uint8Array,
   publicMessage: string | undefined,
-  recipientEmailHashes: `0x${string}`[], // Poseidon hashes of recipient emails
+  recipientEmailHashes: `0x${string}`[], // Salted Poseidon hashes: Poseidon(email, senderAddress)
   payloadContentHash: `0x${string}`, // keccak256 of decrypted payload
   rewardAmount: bigint, // ETH reward in wei
 ): Promise<bigint> {
@@ -389,7 +391,7 @@ async function addMessageWithReward(
 
   const tx = await contract.addMessageWithReward(
     limbHandles,
-    byteLen,
+    byteLenHandle,
     skShareHandle,
     payloadHex,
     inputProof,
@@ -542,23 +544,23 @@ async function retrieveMessage(
 ): Promise<{
   skShare: bigint;
   encodedRecipientEmail: bigint[];
-  emailByteLen: number;
+  emailByteLenHandle: bigint; // FHE handle — must be decrypted via FHEVM
   payload: Uint8Array;
   publicMessage: string;
   hash: `0x${string}`;
   nameLimbs: bigint[];
-  nameByteLen: number;
+  nameByteLenHandle: bigint; // FHE handle — must be decrypted via FHEVM
 }> {
   const result = await contract.retrieve(ownerAddress, index);
   return {
     skShare: result.skShare,
     encodedRecipientEmail: result.encodedRecipientEmail,
-    emailByteLen: Number(result.emailByteLen),
+    emailByteLenHandle: result.emailByteLen, // euint32 FHE handle
     payload: ethers.getBytes(result.payload),
     publicMessage: result.publicMessage,
     hash: result.hash,
     nameLimbs: result.nameLimbs,
-    nameByteLen: Number(result.nameByteLen),
+    nameByteLenHandle: result.nameByteLen, // euint32 FHE handle
   };
 }
 ```
@@ -572,12 +574,15 @@ async function decryptMessage(
   fhevmInstance: FhevmInstance,
   skShareHandle: bigint,
   emailLimbHandles: bigint[],
-  emailByteLen: number,
+  emailByteLenHandle: bigint, // euint32 FHE handle — must be decrypted
   contractAddress: string,
   userAddress: string,
 ): Promise<{ email: string; keyShare: Uint8Array }> {
   // Request decryption from the gateway
   const decryptedKeyShare = await fhevmInstance.decrypt128(contractAddress, skShareHandle);
+
+  // Decrypt email byte length (now FHE-encrypted as euint32)
+  const emailByteLen = Number(await fhevmInstance.decrypt32(contractAddress, emailByteLenHandle));
 
   // Decrypt email limbs
   const decryptedLimbs: Uint8Array[] = [];
@@ -615,7 +620,7 @@ interface ZkEmailProof {
   pA: [bigint, bigint];
   pB: [[bigint, bigint], [bigint, bigint]];
   pC: [bigint, bigint];
-  publicSignals: bigint[]; // [recipientEmailHash, dkimPubkeyHash, contentHash]
+  publicSignals: bigint[]; // [recipientEmailHash, dkimPubkeyHash, contentHash, senderAddress]
 }
 ```
 
