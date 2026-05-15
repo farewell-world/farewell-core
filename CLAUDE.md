@@ -128,7 +128,8 @@ enum UserStatus {
 
 ### Claiming & Delivery
 
-- `claim(user, index)` - Claim a message (grants FHE decryption access)
+- `claim(user, index)` - Claim a message (grants FHE decryption access, records `claimedAt`)
+- `resetClaim(user, index)` - Reset a claimed message after delivery deadline (72h) expires
 - `retrieve(owner, index)` - Retrieve encrypted message data
 
 ### ZK-Email Verification
@@ -163,6 +164,7 @@ event Ping(address indexed user, uint64 when);
 event Deceased(address indexed user, uint64 when, address indexed notifier);
 event MessageAdded(address indexed user, uint256 indexed index);
 event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
+event ClaimReset(address indexed user, uint256 indexed index, address indexed previousClaimer);
 event MessageEdited(address indexed user, uint256 indexed index);
 event MessageRevoked(address indexed user, uint256 indexed index);
 event CouncilMemberAdded(address indexed user, address indexed member);
@@ -185,7 +187,7 @@ event EncryptedVotingChanged(address indexed user, bool indexed enabled);
 
 The contract uses Zama's FHEVM for encrypted data:
 
-- **Encrypted Strings**: Emails are padded to MAX_EMAIL_BYTE_LEN and split into euint256 limbs
+- **Encrypted Strings**: Emails are padded to MAX_EMAIL_BYTE_LEN and split into euint256 limbs; `byteLen` is stored as `euint32` (FHE-encrypted) to prevent length leakage
 - **Encrypted Integers**: Key shares stored as euint128
 - **Encrypted Council Votes**: `euint8` values (1=alive, 2=dead) with homomorphic tallying via `FHE.eq`, `FHE.select`, `FHE.add`, `FHE.ge`; async decryption via `FHE.makePubliclyDecryptable` and `FHE.checkSignatures`
 - **Access Control**: `FHE.allow()` grants decryption access to specific addresses
@@ -196,7 +198,8 @@ The contract uses Zama's FHEVM for encrypted data:
 ### Known Limitations
 
 1. **No Recovery**: Users marked deceased cannot be recovered (except via council vote before finalization)
-2. **FHE Permissions**: Once `FHE.allow()` is called, it cannot be revoked — claimers and council members retain decryption access permanently
+2. **Delivery Deadline**: `claim()` records `claimedAt`; if the claimer does not complete delivery proofs within 72 hours (`DELIVERY_DEADLINE`), anyone can call `resetClaim()` to unclaim the message. Note that `FHE.allow()` permissions granted during the original claim are permanent and cannot be revoked.
+3. **FHE Permissions**: Once `FHE.allow()` is called, it cannot be revoked — claimers and council members retain decryption access permanently
 3. **Timestamp Manipulation**: Block timestamps can be manipulated ~15 seconds
 4. **ZK Verifier Configuration**: Current beta implementation requires the verifier contract to be set by the owner
 5. **Direct ETH Rejected**: The contract's `receive()` reverts — ETH can only enter via `addMessageWithReward()`
