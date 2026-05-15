@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.27;
 
-import {FHE, euint256, euint128, euint64, euint8, ebool, externalEuint128, externalEuint256, externalEuint64, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint256, euint128, euint64, euint32, euint8, ebool, externalEuint128, externalEuint256, externalEuint64, externalEuint32, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 // OZ non-upgradeable imports
@@ -52,12 +52,11 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
         address notifierAddress;
     }
 
-    /// @dev Encrypted recipient "string" as 32-byte limbs (each limb is an euint256) + original length.
-    /// @notice byteLen stores the original length for trimming during decryption.
-    ///         All emails are padded to MAX_EMAIL_BYTE_LEN before encryption to prevent length leakage.
+    /// @dev Encrypted string as 32-byte limbs (each limb is an euint256) + encrypted original length.
+    ///      All values are padded to their maximum byte length before encryption to prevent length leakage.
     struct EncryptedString {
-        euint256[] limbs; // each 32 bytes of the UTF-8 email packed as uint256
-        uint32 byteLen; // original email length in bytes (not chars) - used for trimming padding
+        euint256[] limbs;
+        euint32 byteLen; // encrypted original byte length — revealed only to authorized parties via re-encryption
     }
 
     /// @notice Reward type for messages
@@ -82,6 +81,7 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
         uint64 createdAt;
         address claimedBy;
         bool claimed;
+        uint64 claimedAt; // timestamp when claimed — used for delivery deadline
         bool revoked; // Marks if message has been revoked by owner (cannot be claimed)
         /// @notice Public message stored in cleartext - visible to anyone
         string publicMessage;
@@ -167,6 +167,7 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     error UserAlive();
     error InvalidIndex();
     error AlreadyClaimed();
+    error DeliveryDeadlineNotExpired();
     error MessageWasRevoked();
     error AlreadyRevoked();
     error NotDeliverable();
@@ -330,6 +331,12 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
     /// @param claimer The address that claimed the message
     event Claimed(address indexed user, uint256 indexed index, address indexed claimer);
 
+    /// @notice Emitted when a claim is reset after the delivery deadline expires
+    /// @param user The deceased user's address
+    /// @param index The message index
+    /// @param previousClaimer The address whose claim was reset
+    event ClaimReset(address indexed user, uint256 indexed index, address indexed previousClaimer);
+
     /// @notice Emitted when a message is edited
     /// @param user The owner's address
     /// @param index The message index
@@ -488,6 +495,9 @@ abstract contract FarewellStorage is Ownable, ReentrancyGuard {
 
     // --- Reward constants ---
     uint256 internal constant MAX_RECIPIENTS = 20;
+
+    /// @notice Time window for a claimer to submit delivery proofs before claim can be reset
+    uint64 internal constant DELIVERY_DEADLINE = 72 hours;
 
     /// @notice Restricts call to registered users only
     modifier onlyRegistered(address user) {
