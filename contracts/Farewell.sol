@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity 0.8.27;
 
-import {FHE, euint256, euint128, euint64, euint8, ebool, externalEuint128, externalEuint256, externalEuint64, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint256, euint128, euint64, euint32, euint8, ebool, externalEuint128, externalEuint256, externalEuint64, externalEuint32, externalEuint8} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -47,7 +47,7 @@ contract Farewell is FarewellStorage {
     function _storeEncryptedName(
         EncryptedString storage nameField,
         externalEuint256[] calldata nameLimbs,
-        uint32 nameByteLen,
+        externalEuint32 encNameByteLen,
         bytes calldata nameInputProof
     ) internal {
         nameField.limbs = new euint256[](nameLimbs.length);
@@ -58,7 +58,10 @@ contract Farewell is FarewellStorage {
             FHE.allow(v, msg.sender);
             unchecked { ++i; }
         }
-        nameField.byteLen = nameByteLen;
+        euint32 bl = FHE.fromExternal(encNameByteLen, nameInputProof);
+        nameField.byteLen = bl;
+        FHE.allowThis(bl);
+        FHE.allow(bl, msg.sender);
     }
 
     /// @notice Grant FHE decryption access on a user's encrypted name limbs
@@ -69,6 +72,9 @@ contract Farewell is FarewellStorage {
         for (uint256 i = 0; i < enc.limbs.length; ) {
             FHE.allow(enc.limbs[i], allowee);
             unchecked { ++i; }
+        }
+        if (FHE.isInitialized(enc.byteLen)) {
+            FHE.allow(enc.byteLen, allowee);
         }
     }
 
@@ -104,7 +110,7 @@ contract Farewell is FarewellStorage {
     /// @notice Internal registration logic with encrypted name
     function _registerWithName(
         externalEuint256[] calldata nameLimbs,
-        uint32 nameByteLen,
+        externalEuint32 encNameByteLen,
         bytes calldata nameInputProof,
         uint64 checkInPeriod,
         uint64 gracePeriod,
@@ -112,7 +118,6 @@ contract Farewell is FarewellStorage {
     ) internal {
         if (!(checkInPeriod > 1 days - 1)) revert CheckInPeriodTooShort();
         if (!(gracePeriod > 1 days - 1)) revert GracePeriodTooShort();
-        if (nameByteLen > MAX_NAME_BYTE_LEN) revert NameTooLong();
         if (nameLimbs.length != (uint256(MAX_NAME_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
 
         User storage u = users[msg.sender];
@@ -121,13 +126,13 @@ contract Farewell is FarewellStorage {
             if (u.deceased) revert UserDeceased();
             uint256 graceEnd = uint256(u.lastCheckIn) + uint256(u.checkInPeriod) + uint256(u.gracePeriod);
             if (!(block.timestamp < graceEnd + 1)) revert CheckInExpired();
-            _storeEncryptedName(u.encryptedName, nameLimbs, nameByteLen, nameInputProof);
+            _storeEncryptedName(u.encryptedName, nameLimbs, encNameByteLen, nameInputProof);
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
             u.encryptedVoting = encryptedVoting;
             emit UserUpdated(msg.sender, checkInPeriod, gracePeriod, u.registeredOn);
         } else {
-            _storeEncryptedName(u.encryptedName, nameLimbs, nameByteLen, nameInputProof);
+            _storeEncryptedName(u.encryptedName, nameLimbs, encNameByteLen, nameInputProof);
             u.checkInPeriod = checkInPeriod;
             u.gracePeriod = gracePeriod;
             u.lastCheckIn = uint64(block.timestamp);
@@ -144,24 +149,24 @@ contract Farewell is FarewellStorage {
     /// @notice Register with an encrypted name, custom periods, and encrypted voting preference
     function register(
         externalEuint256[] calldata nameLimbs,
-        uint32 nameByteLen,
+        externalEuint32 encNameByteLen,
         bytes calldata nameInputProof,
         uint64 checkInPeriod,
         uint64 gracePeriod,
         bool encryptedVoting
     ) external {
-        _registerWithName(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod, encryptedVoting);
+        _registerWithName(nameLimbs, encNameByteLen, nameInputProof, checkInPeriod, gracePeriod, encryptedVoting);
     }
 
     /// @notice Register with an encrypted name and custom periods (encrypted voting defaults to true)
     function register(
         externalEuint256[] calldata nameLimbs,
-        uint32 nameByteLen,
+        externalEuint32 encNameByteLen,
         bytes calldata nameInputProof,
         uint64 checkInPeriod,
         uint64 gracePeriod
     ) external {
-        _registerWithName(nameLimbs, nameByteLen, nameInputProof, checkInPeriod, gracePeriod, true);
+        _registerWithName(nameLimbs, encNameByteLen, nameInputProof, checkInPeriod, gracePeriod, true);
     }
 
     /// @notice Register with custom check-in and grace periods and no name (encrypted voting defaults to true)
@@ -177,10 +182,10 @@ contract Farewell is FarewellStorage {
     /// @notice Register with an encrypted name and default periods (encrypted voting defaults to true)
     function register(
         externalEuint256[] calldata nameLimbs,
-        uint32 nameByteLen,
+        externalEuint32 encNameByteLen,
         bytes calldata nameInputProof
     ) external {
-        _registerWithName(nameLimbs, nameByteLen, nameInputProof, DEFAULT_CHECKIN, DEFAULT_GRACE, true);
+        _registerWithName(nameLimbs, encNameByteLen, nameInputProof, DEFAULT_CHECKIN, DEFAULT_GRACE, true);
     }
 
     /// @notice Register with default check-in and grace periods and no name (encrypted voting defaults to true)
@@ -196,7 +201,7 @@ contract Farewell is FarewellStorage {
     }
 
     /// @notice Get the encrypted name handles and byte length of a registered user
-    function getEncryptedName(address user) external view returns (euint256[] memory nameLimbs, uint32 nameByteLen) {
+    function getEncryptedName(address user) external view returns (euint256[] memory nameLimbs, euint32 nameByteLen) {
         User storage u = users[user];
         if (u.lastCheckIn == 0) revert NotRegistered();
         return (u.encryptedName.limbs, u.encryptedName.byteLen);
@@ -207,11 +212,11 @@ contract Farewell is FarewellStorage {
     function getEncryptedNames(address[] calldata userAddrs)
         external
         view
-        returns (euint256[][] memory allLimbs, uint32[] memory allByteLens)
+        returns (euint256[][] memory allLimbs, euint32[] memory allByteLens)
     {
         uint256 len = userAddrs.length;
         allLimbs = new euint256[][](len);
-        allByteLens = new uint32[](len);
+        allByteLens = new euint32[](len);
         for (uint256 i = 0; i < len; ) {
             User storage u = users[userAddrs[i]];
             if (u.lastCheckIn != 0) {
@@ -225,15 +230,14 @@ contract Farewell is FarewellStorage {
     /// @notice Update the user's encrypted display name
     function setEncryptedName(
         externalEuint256[] calldata nameLimbs,
-        uint32 nameByteLen,
+        externalEuint32 encNameByteLen,
         bytes calldata nameInputProof
     ) external {
         User storage u = users[msg.sender];
         if (u.lastCheckIn == 0) revert NotRegistered();
         if (u.deceased) revert UserDeceased();
-        if (nameByteLen > MAX_NAME_BYTE_LEN) revert NameTooLong();
         if (nameLimbs.length != (uint256(MAX_NAME_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
-        _storeEncryptedName(u.encryptedName, nameLimbs, nameByteLen, nameInputProof);
+        _storeEncryptedName(u.encryptedName, nameLimbs, encNameByteLen, nameInputProof);
         // Re-allow all existing council members to decrypt the new name
         CouncilMember[] storage council = councils[msg.sender];
         for (uint256 i = 0; i < council.length; ) {
@@ -421,17 +425,13 @@ contract Farewell is FarewellStorage {
 
     // --- Messages ---
 
-    /// @notice Validate message input parameters (email, limbs, payload)
-    /// @param emailByteLen Original email byte length before padding
+    /// @notice Validate message input parameters (limbs, payload)
     /// @param limbs Encrypted email limbs
     /// @param payload Encrypted message payload
     function _validateMessageInput(
-        uint32 emailByteLen,
         externalEuint256[] calldata limbs,
         bytes calldata payload
     ) internal pure {
-        if (emailByteLen == 0) revert EmailLenZero();
-        if (!(emailByteLen < MAX_EMAIL_BYTE_LEN + 1)) revert EmailTooLong();
         if (limbs.length == 0) revert NoLimbs();
         if (payload.length == 0) revert BadPayloadSize();
         if (!(payload.length < MAX_PAYLOAD_BYTE_LEN + 1)) revert PayloadTooLong();
@@ -442,12 +442,12 @@ contract Farewell is FarewellStorage {
     /// @notice Store encrypted email limbs and grant FHE access to the caller
     /// @param recipientEmail Storage reference to the encrypted string struct
     /// @param limbs Encrypted email limbs from the caller
-    /// @param emailByteLen Original email byte length
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param inputProof FHE input proof for the encrypted values
     function _storeEncryptedEmail(
         EncryptedString storage recipientEmail,
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         bytes calldata inputProof
     ) internal {
         recipientEmail.limbs = new euint256[](limbs.length);
@@ -460,18 +460,21 @@ contract Farewell is FarewellStorage {
                 ++i;
             }
         }
-        recipientEmail.byteLen = emailByteLen;
+        euint32 bl = FHE.fromExternal(encEmailByteLen, inputProof);
+        recipientEmail.byteLen = bl;
+        FHE.allowThis(bl);
+        FHE.allow(bl, msg.sender);
     }
 
     /// @notice Store encrypted passphrase hint limbs and grant FHE access
     /// @param hint Storage reference to the encrypted string struct
     /// @param hintLimbs Encrypted hint limbs from the caller
-    /// @param hintByteLen Original hint byte length
+    /// @param encHintByteLen Encrypted original hint byte length
     /// @param hintInputProof FHE input proof for the hint values
     function _storeEncryptedHint(
         EncryptedString storage hint,
         externalEuint256[] memory hintLimbs,
-        uint32 hintByteLen,
+        externalEuint32 encHintByteLen,
         bytes memory hintInputProof
     ) internal {
         hint.limbs = new euint256[](hintLimbs.length);
@@ -484,34 +487,37 @@ contract Farewell is FarewellStorage {
                 ++i;
             }
         }
-        hint.byteLen = hintByteLen;
+        euint32 bl = FHE.fromExternal(encHintByteLen, hintInputProof);
+        hint.byteLen = bl;
+        FHE.allowThis(bl);
+        FHE.allow(bl, msg.sender);
     }
 
     /// @notice Internal function to add an encrypted message for the caller
     /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
-    /// @param emailByteLen Original email byte length before padding
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param encSkShare Encrypted secret key share (euint128)
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
     /// @param publicMessage Optional cleartext public message
     /// @param cryptoScheme Encryption scheme descriptor (e.g., "AES-128-GCM;SHAKE128")
     /// @param hintLimbs Encrypted passphrase hint limbs (empty if no hint)
-    /// @param hintByteLen Original hint byte length (0 if no hint)
+    /// @param encHintByteLen Encrypted original hint byte length
     /// @param hintInputProof FHE input proof for hint values (empty if no hint)
     /// @return index The index of the newly added message
     function _addMessage(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
         string memory publicMessage,
         string memory cryptoScheme,
         externalEuint256[] memory hintLimbs,
-        uint32 hintByteLen,
+        externalEuint32 encHintByteLen,
         bytes memory hintInputProof
     ) internal onlyRegistered(msg.sender) returns (uint256 index) {
-        _validateMessageInput(emailByteLen, limbs, payload);
+        _validateMessageInput(limbs, payload);
         if (!(bytes(publicMessage).length < MAX_PUBLIC_MESSAGE_BYTE_LEN + 1)) revert PublicMessageTooLong();
 
         User storage u = users[msg.sender];
@@ -520,7 +526,7 @@ contract Farewell is FarewellStorage {
         u.messages.push();
         Message storage m = u.messages[index];
 
-        _storeEncryptedEmail(m.recipientEmail, limbs, emailByteLen, inputProof);
+        _storeEncryptedEmail(m.recipientEmail, limbs, encEmailByteLen, inputProof);
 
         // assign directly, no temp var
         m._skShare = FHE.fromExternal(encSkShare, inputProof);
@@ -534,13 +540,12 @@ contract Farewell is FarewellStorage {
 
         // Store encrypted hint if provided
         if (hintLimbs.length > 0) {
-            if (!(hintByteLen < MAX_HINT_BYTE_LEN + 1)) revert HintTooLong();
             if (hintLimbs.length != (uint256(MAX_HINT_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
-            _storeEncryptedHint(m.passphraseHint, hintLimbs, hintByteLen, hintInputProof);
+            _storeEncryptedHint(m.passphraseHint, hintLimbs, encHintByteLen, hintInputProof);
         }
 
         // Compute hash of all input attributes
-        bytes32 messageHash = keccak256(abi.encode(limbs, emailByteLen, encSkShare, payload, publicMessage));
+        bytes32 messageHash = keccak256(abi.encode(limbs, encSkShare, payload, publicMessage));
         m.hash = messageHash;
         messageHashes[messageHash] = true; // Track hash for lookup
 
@@ -550,7 +555,7 @@ contract Farewell is FarewellStorage {
 
     /// @notice Add an encrypted message without hint
     /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
-    /// @param emailByteLen Original email byte length before padding
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param encSkShare Encrypted secret key share (euint128)
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
@@ -559,48 +564,48 @@ contract Farewell is FarewellStorage {
     /// @return index The index of the newly added message
     function addMessage(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
         string calldata publicMessage,
         string calldata cryptoScheme
     ) external returns (uint256 index) {
-        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
-            new externalEuint256[](0), 0, "");
+        return _addMessage(limbs, encEmailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            new externalEuint256[](0), externalEuint32.wrap(0), "");
     }
 
     /// @notice Add an encrypted message with passphrase hint
     /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
-    /// @param emailByteLen Original email byte length before padding
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param encSkShare Encrypted secret key share (euint128)
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
     /// @param publicMessage Optional cleartext public message
     /// @param cryptoScheme Encryption scheme descriptor
     /// @param hintLimbs Encrypted passphrase hint limbs
-    /// @param hintByteLen Original hint byte length
+    /// @param encHintByteLen Encrypted original hint byte length
     /// @param hintInputProof FHE input proof for hint values
     /// @return index The index of the newly added message
     function addMessage(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
         string calldata publicMessage,
         string calldata cryptoScheme,
         externalEuint256[] calldata hintLimbs,
-        uint32 hintByteLen,
+        externalEuint32 encHintByteLen,
         bytes calldata hintInputProof
     ) external returns (uint256 index) {
-        return _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
-            hintLimbs, hintByteLen, hintInputProof);
+        return _addMessage(limbs, encEmailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            hintLimbs, encHintByteLen, hintInputProof);
     }
 
     /// @notice Add a message with ETH or ERC-20 reward for delivery verification (without hint)
     /// @param limbs Encrypted email limbs
-    /// @param emailByteLen Original email byte length
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param encSkShare Encrypted secret key share
     /// @param payload Encrypted message payload
     /// @param inputProof FHE input proof
@@ -613,7 +618,7 @@ contract Farewell is FarewellStorage {
     /// @return index The index of the newly added message
     function addMessageWithReward(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
@@ -624,43 +629,43 @@ contract Farewell is FarewellStorage {
         address rewardToken,
         uint256 rewardAmount
     ) external payable returns (uint256 index) {
-        return _addMessageWithReward(limbs, emailByteLen, encSkShare, payload, inputProof,
-            publicMessage, cryptoScheme, new externalEuint256[](0), 0, "",
+        return _addMessageWithReward(limbs, encEmailByteLen, encSkShare, payload, inputProof,
+            publicMessage, cryptoScheme, new externalEuint256[](0), externalEuint32.wrap(0), "",
             recipientEmailHashes, payloadContentHash, rewardToken, rewardAmount);
     }
 
     /// @notice Add a message with ETH or ERC-20 reward and passphrase hint
     function addMessageWithReward(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
         string calldata publicMessage,
         string calldata cryptoScheme,
         externalEuint256[] calldata hintLimbs,
-        uint32 hintByteLen,
+        externalEuint32 encHintByteLen,
         bytes calldata hintInputProof,
         bytes32[] calldata recipientEmailHashes,
         bytes32 payloadContentHash,
         address rewardToken,
         uint256 rewardAmount
     ) external payable returns (uint256 index) {
-        return _addMessageWithReward(limbs, emailByteLen, encSkShare, payload, inputProof,
-            publicMessage, cryptoScheme, hintLimbs, hintByteLen, hintInputProof,
+        return _addMessageWithReward(limbs, encEmailByteLen, encSkShare, payload, inputProof,
+            publicMessage, cryptoScheme, hintLimbs, encHintByteLen, hintInputProof,
             recipientEmailHashes, payloadContentHash, rewardToken, rewardAmount);
     }
 
     function _addMessageWithReward(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
         string calldata publicMessage,
         string calldata cryptoScheme,
         externalEuint256[] memory hintLimbs,
-        uint32 hintByteLen,
+        externalEuint32 encHintByteLen,
         bytes memory hintInputProof,
         bytes32[] calldata recipientEmailHashes,
         bytes32 payloadContentHash,
@@ -670,8 +675,8 @@ contract Farewell is FarewellStorage {
         if (recipientEmailHashes.length == 0) revert MustHaveRecipient();
         if (!(recipientEmailHashes.length < MAX_RECIPIENTS + 1)) revert TooManyRecipients();
 
-        index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
-            hintLimbs, hintByteLen, hintInputProof);
+        index = _addMessage(limbs, encEmailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            hintLimbs, encHintByteLen, hintInputProof);
 
         Message storage m = users[msg.sender].messages[index];
         m.recipientEmailHashes = recipientEmailHashes;
@@ -699,7 +704,7 @@ contract Farewell is FarewellStorage {
 
     /// @notice Add a message with confidential ERC-20 reward (cUSDT/cUSDC)
     /// @param limbs Encrypted email limbs
-    /// @param emailByteLen Original email byte length
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param encSkShare Encrypted secret key share
     /// @param payload Encrypted message payload
     /// @param inputProof FHE input proof
@@ -713,7 +718,7 @@ contract Farewell is FarewellStorage {
     /// @return index The index of the newly added message
     function addMessageWithConfidentialReward(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
@@ -729,8 +734,8 @@ contract Farewell is FarewellStorage {
         if (!(recipientEmailHashes.length < MAX_RECIPIENTS + 1)) revert TooManyRecipients();
         if (!allowedRewardTokens[cToken]) revert TokenNotAllowed();
 
-        index = _addMessage(limbs, emailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
-            new externalEuint256[](0), 0, "");
+        index = _addMessage(limbs, encEmailByteLen, encSkShare, payload, inputProof, publicMessage, cryptoScheme,
+            new externalEuint256[](0), externalEuint32.wrap(0), "");
 
         Message storage m = users[msg.sender].messages[index];
         m.recipientEmailHashes = recipientEmailHashes;
@@ -827,26 +832,26 @@ contract Farewell is FarewellStorage {
     /// @notice Edit a message (only owner, not deceased, not claimed, not revoked)
     /// @param index The index of the message to edit
     /// @param limbs Encrypted email limbs (each 32-byte chunk as euint256)
-    /// @param emailByteLen Original email byte length before padding
+    /// @param encEmailByteLen Encrypted original email byte length
     /// @param encSkShare Encrypted secret key share (euint128)
     /// @param payload AES-encrypted message payload
     /// @param inputProof FHE input proof for the encrypted values
     /// @param publicMessage Optional cleartext public message
     /// @param cryptoScheme Encryption scheme descriptor
     /// @param hintLimbs Encrypted passphrase hint limbs (empty to keep existing)
-    /// @param hintByteLen Original hint byte length (0 to keep existing)
+    /// @param encHintByteLen Encrypted original hint byte length
     /// @param hintInputProof FHE input proof for hint values
     function editMessage(
         uint256 index,
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
+        externalEuint32 encEmailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         bytes calldata inputProof,
         string calldata publicMessage,
         string calldata cryptoScheme,
         externalEuint256[] calldata hintLimbs,
-        uint32 hintByteLen,
+        externalEuint32 encHintByteLen,
         bytes calldata hintInputProof
     ) external nonReentrant onlyRegistered(msg.sender) {
         User storage u = users[msg.sender];
@@ -856,10 +861,10 @@ contract Farewell is FarewellStorage {
         Message storage m = u.messages[index];
         if (m.revoked) revert MessageWasRevoked();
         if (m.claimed) revert AlreadyClaimed();
-        _validateMessageInput(emailByteLen, limbs, payload);
+        _validateMessageInput(limbs, payload);
 
         // Update encrypted email and skShare
-        _storeEncryptedEmail(m.recipientEmail, limbs, emailByteLen, inputProof);
+        _storeEncryptedEmail(m.recipientEmail, limbs, encEmailByteLen, inputProof);
         m._skShare = FHE.fromExternal(encSkShare, inputProof);
         FHE.allowThis(m._skShare);
         FHE.allow(m._skShare, msg.sender);
@@ -871,9 +876,8 @@ contract Farewell is FarewellStorage {
 
         // Update hint if provided
         if (hintLimbs.length > 0) {
-            if (!(hintByteLen < MAX_HINT_BYTE_LEN + 1)) revert HintTooLong();
             if (hintLimbs.length != (uint256(MAX_HINT_BYTE_LEN) + 31) / 32) revert LimbsMismatch();
-            _storeEncryptedHint(m.passphraseHint, hintLimbs, hintByteLen, hintInputProof);
+            _storeEncryptedHint(m.passphraseHint, hintLimbs, encHintByteLen, hintInputProof);
         }
 
         // Refund and reset reward/proof fields if message had a reward attached
@@ -889,7 +893,7 @@ contract Farewell is FarewellStorage {
 
         // Invalidate old hash and recompute
         messageHashes[m.hash] = false;
-        bytes32 messageHash = keccak256(abi.encode(limbs, emailByteLen, encSkShare, payload, publicMessage));
+        bytes32 messageHash = keccak256(abi.encode(limbs, encSkShare, payload, publicMessage));
         m.hash = messageHash;
         messageHashes[messageHash] = true;
 
@@ -899,19 +903,17 @@ contract Farewell is FarewellStorage {
     /// @notice Compute the hash of message inputs without adding the message
     /// @dev Useful for checking if a message with these inputs already exists
     /// @param limbs Encrypted email limbs
-    /// @param emailByteLen Original email byte length
     /// @param encSkShare Encrypted secret key share
     /// @param payload Encrypted message payload
     /// @param publicMessage Optional cleartext public message
     /// @return The keccak256 hash of all message inputs
     function computeMessageHash(
         externalEuint256[] calldata limbs,
-        uint32 emailByteLen,
         externalEuint128 encSkShare,
         bytes calldata payload,
         string calldata publicMessage
     ) external pure returns (bytes32) {
-        return keccak256(abi.encode(limbs, emailByteLen, encSkShare, payload, publicMessage));
+        return keccak256(abi.encode(limbs, encSkShare, payload, publicMessage));
     }
 
     // --- Death and delivery ---
@@ -962,6 +964,7 @@ contract Farewell is FarewellStorage {
         if (m.claimed) revert AlreadyClaimed();
         m.claimed = true;
         m.claimedBy = claimerAddress;
+        m.claimedAt = uint64(block.timestamp);
 
         FHE.allow(m._skShare, claimerAddress);
         for (uint256 i = 0; i < m.recipientEmail.limbs.length; ) {
@@ -969,6 +972,9 @@ contract Farewell is FarewellStorage {
             unchecked {
                 ++i;
             }
+        }
+        if (FHE.isInitialized(m.recipientEmail.byteLen)) {
+            FHE.allow(m.recipientEmail.byteLen, claimerAddress);
         }
 
         // Also allow hint limbs if they exist
@@ -978,11 +984,37 @@ contract Farewell is FarewellStorage {
                 ++i;
             }
         }
+        if (FHE.isInitialized(m.passphraseHint.byteLen)) {
+            FHE.allow(m.passphraseHint.byteLen, claimerAddress);
+        }
 
         // Allow claimer to decrypt sender's encrypted name
         _allowNameLimbs(user, claimerAddress);
 
         emit Claimed(user, index, claimerAddress);
+    }
+
+    /// @notice Reset a claimed message after the delivery deadline expires
+    /// @dev Callable by anyone. The deadline is the guard.
+    ///      SECURITY: The previous claimer retains FHE.allow() grants permanently (FHEVM limitation).
+    ///      They hold s but not s', so they cannot decrypt message content.
+    /// @param user The deceased user's address
+    /// @param index The message index to reset
+    function resetClaim(address user, uint256 index) external {
+        User storage u = users[user];
+        if (!u.deceased) revert NotDeliverable();
+        if (!(index < u.messages.length)) revert InvalidIndex();
+
+        Message storage m = u.messages[index];
+        if (!m.claimed) revert MessageNotClaimed();
+        if (!(block.timestamp > uint256(m.claimedAt) + uint256(DELIVERY_DEADLINE))) revert DeliveryDeadlineNotExpired();
+
+        address previousClaimer = m.claimedBy;
+        m.claimed = false;
+        m.claimedBy = address(0);
+        m.claimedAt = 0;
+
+        emit ClaimReset(user, index, previousClaimer);
     }
 
     /// @notice Retrieve message data (encrypted handles are returned but can only be decrypted
@@ -996,15 +1028,15 @@ contract Farewell is FarewellStorage {
         returns (
             euint128 skShare,
             euint256[] memory encodedRecipientEmail,
-            uint32 emailByteLen,
+            euint32 emailByteLen,
             bytes memory payload,
             string memory publicMessage,
             bytes32 hash,
             string memory cryptoScheme,
             euint256[] memory hintLimbs,
-            uint32 hintByteLen,
+            euint32 hintByteLen,
             euint256[] memory nameLimbs,
-            uint32 nameByteLen
+            euint32 nameByteLen
         )
     {
         User storage u = users[owner];
