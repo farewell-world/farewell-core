@@ -64,6 +64,7 @@ All constants are immutable and defined at compile-time.
 | `BASE_REWARD`          | `uint256` | `0.01 ether`  | Base ETH reward per message with delivery proof. Used when calculating `calculateReward()`.                                              |
 | `REWARD_PER_KB`        | `uint256` | `0.005 ether` | Additional reward per KB of payload size. Incentivizes larger messages proportionally.                                                   |
 | `MAX_COUNCIL_SIZE`     | `uint256` | `20`          | Maximum council members per user. Prevents council voting from becoming too expensive (O(n) operations).                                 |
+| `DELIVERY_DEADLINE`    | `uint64`  | `72 hours`    | Time after `claim()` within which the claimer must complete delivery proofs. After expiry, `resetClaim()` can unclaim the message.       |
 
 ---
 
@@ -101,14 +102,16 @@ struct ZkEmailProof {
   uint256[2][2] pB; // Groth16 proof component B (2x2 matrix)
   uint256[2] pC; // Groth16 proof component C
   uint256[] publicSignals; // Public circuit outputs:
-  // [0] = Poseidon hash of recipient email (TO field)
+  // [0] = Poseidon hash of recipient email salted with sender address
   // [1] = DKIM public key hash (RSA-2048)
   // [2] = Keccak256 hash of decrypted payload content
+  // [3] = Sender address (message creator's wallet address)
 }
 ```
 
 Used by `proveDelivery()`. The proof proves that an email with a specific recipient, from a specific domain (DKIM),
-containing specific content, was actually sent. See [proof-structure.md](proof-structure.md) for details.
+containing specific content, was actually sent. The recipient hash is salted with the sender's address to prevent
+cross-user dictionary attacks. See [proof-structure.md](proof-structure.md) for details.
 
 ### User (Internal Storage)
 
@@ -139,6 +142,7 @@ struct Message {
   uint64 createdAt; // Timestamp when message was created
   bool claimed; // true if claimer called claim()
   address claimedBy; // Address of the claimer (if claimed)
+  uint64 claimedAt; // Timestamp when claim() was called (for delivery deadline)
   string publicMessage; // Plaintext public message visible to all
   bytes32 hash; // Keccak256 hash of all inputs (for deduplication)
   bool revoked; // true if owner revoked the message
@@ -157,11 +161,11 @@ Stored in `User.messages[]` array.
 struct EncryptedString {
   euint256[] limbs; // Data padded to fixed length and split into 32-byte chunks,
   // each encrypted as euint256 (7 limbs for emails, 4 limbs for names)
-  uint32 byteLen; // Original length (before padding) for trimming during decryption
+  euint32 byteLen; // Original length (before padding), FHE-encrypted to prevent length leakage
 }
 ```
 
-Used for both recipient emails (7 limbs, MAX_EMAIL_BYTE_LEN=224) and user names (4 limbs, MAX_NAME_BYTE_LEN=128).
+Used for both recipient emails (7 limbs, MAX_EMAIL_BYTE_LEN=224) and user names (4 limbs, MAX_NAME_BYTE_LEN=128). The `byteLen` field is FHE-encrypted (`euint32`) to prevent leaking the original string length, which would otherwise reveal information about the email address or name.
 
 ### CouncilMember (Internal Storage)
 
@@ -253,12 +257,12 @@ number indicating FHEVM SDK version) |
 
 ### register (4 overloads)
 
-#### register(bytes32[] nameLimbs, uint32 nameByteLen, bytes nameInputProof, uint64 checkInPeriod, uint64 gracePeriod)
+#### register(bytes32[] nameLimbs, externalEuint32 nameByteLen, bytes nameInputProof, uint64 checkInPeriod, uint64 gracePeriod)
 
 ```solidity
 function register(
     bytes32[] calldata nameLimbs,
-    uint32 nameByteLen,
+    externalEuint32 nameByteLen,
     bytes calldata nameInputProof,
     uint64 checkInPeriod,
     uint64 gracePeriod
@@ -270,8 +274,8 @@ Register a new user or update an existing user's settings with an FHE-encrypted 
 **Access**: Anyone (but caller must not be deceased)
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `nameLimbs` | `bytes32[]` |
-FHE-encrypted name split into 32-byte limbs (4 limbs for MAX_NAME_BYTE_LEN=128 bytes) | | `nameByteLen` | `uint32` |
-Original name length before padding (max 128 bytes) | | `nameInputProof` | `bytes` | FHE input proof for name
+FHE-encrypted name split into 32-byte limbs (4 limbs for MAX_NAME_BYTE_LEN=128 bytes) | | `nameByteLen` | `externalEuint32` |
+FHE-encrypted original name length before padding (max 128 bytes) | | `nameInputProof` | `bytes` | FHE input proof for name
 encryption | | `checkInPeriod` | `uint64` | Seconds between required check-ins (min 1 day, recommended 30 days) | |
 `gracePeriod` | `uint64` | Seconds for council voting after check-in expires (min 1 day, recommended 7 days) |
 
@@ -309,12 +313,12 @@ Register with custom periods but no name.
 
 ---
 
-#### register(bytes32[] nameLimbs, uint32 nameByteLen, bytes nameInputProof)
+#### register(bytes32[] nameLimbs, externalEuint32 nameByteLen, bytes nameInputProof)
 
 ```solidity
 function register(
     bytes32[] calldata nameLimbs,
-    uint32 nameByteLen,
+    externalEuint32 nameByteLen,
     bytes calldata nameInputProof
 ) external
 ```
@@ -365,7 +369,7 @@ at least once |
 ### getEncryptedName()
 
 ```solidity
-function getEncryptedName(address user) external view returns (euint256[] memory, uint32)
+function getEncryptedName(address user) external view returns (euint256[] memory, euint32)
 ```
 
 Get a user's FHE-encrypted display name.
@@ -375,7 +379,7 @@ Get a user's FHE-encrypted display name.
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `user` | `address` | User address |
 
 **Returns**: | Name | Type | Description | |------|------|-------------| | ``| `euint256[]` | FHE-encrypted name limbs
-(4 limbs, 32 bytes each) | | ``| `uint32` | Original name length before padding |
+(4 limbs, 32 bytes each) | | ``| `euint32` | FHE-encrypted original name length before padding |
 
 **Reverts**: | Error | Reason | |-------|--------| | `"not registered"` | User has not registered |
 
@@ -392,7 +396,7 @@ Get a user's FHE-encrypted display name.
 ```solidity
 function setEncryptedName(
     bytes32[] calldata nameLimbs,
-    uint32 nameByteLen,
+    externalEuint32 nameByteLen,
     bytes calldata nameInputProof
 ) external
 ```
@@ -402,8 +406,8 @@ Update the caller's FHE-encrypted display name.
 **Access**: Only registered users (`msg.sender`)
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `nameLimbs` | `bytes32[]` |
-FHE-encrypted name split into 32-byte limbs (4 limbs for 128 bytes) | | `nameByteLen` | `uint32` | Original name
-length before padding (max 128 bytes) | | `nameInputProof` | `bytes` | FHE input proof for name encryption |
+FHE-encrypted name split into 32-byte limbs (4 limbs for 128 bytes) | | `nameByteLen` | `externalEuint32` | FHE-encrypted
+original name length before padding (max 128 bytes) | | `nameInputProof` | `bytes` | FHE input proof for name encryption |
 
 **Returns**: None
 
@@ -634,12 +638,12 @@ status (council voted alive) | | `"not timed out"` | `now <= lastCheckIn + check
 
 ### addMessage (2 overloads)
 
-#### addMessage(externalEuint256[] limbs, uint32 emailByteLen, externalEuint128 encSkShare, bytes payload, bytes inputProof)
+#### addMessage(externalEuint256[] limbs, externalEuint32 emailByteLen, externalEuint128 encSkShare, bytes payload, bytes inputProof)
 
 ```solidity
 function addMessage(
     externalEuint256[] calldata limbs,
-    uint32 emailByteLen,
+    externalEuint32 emailByteLen,
     externalEuint128 encSkShare,
     bytes calldata payload,
     bytes calldata inputProof
@@ -651,8 +655,8 @@ Add a message without a public message component.
 **Access**: Registered users only
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `limbs` | `externalEuint256[]` |
-FHE-encrypted email split into 32-byte chunks (7 limbs for 224 bytes) | | `emailByteLen` | `uint32` | Original email
-length before padding | | `encSkShare` | `externalEuint128` | FHE-encrypted AES key share (128-bit) | | `payload` |
+FHE-encrypted email split into 32-byte chunks (7 limbs for 224 bytes) | | `emailByteLen` | `externalEuint32` | FHE-encrypted
+original email length before padding | | `encSkShare` | `externalEuint128` | FHE-encrypted AES key share (128-bit) | | `payload` |
 `bytes` | Encrypted message payload (AES-encrypted client-side) | | `inputProof` | `bytes` | FHE input proof for
 encryption verification |
 
@@ -679,12 +683,12 @@ added message in `users[msg.sender].messages[]` |
 
 ---
 
-#### addMessage(externalEuint256[] limbs, uint32 emailByteLen, externalEuint128 encSkShare, bytes payload, bytes inputProof, string publicMessage)
+#### addMessage(externalEuint256[] limbs, externalEuint32 emailByteLen, externalEuint128 encSkShare, bytes payload, bytes inputProof, string publicMessage)
 
 ```solidity
 function addMessage(
     externalEuint256[] calldata limbs,
-    uint32 emailByteLen,
+    externalEuint32 emailByteLen,
     externalEuint128 encSkShare,
     bytes calldata payload,
     bytes calldata inputProof,
@@ -712,7 +716,7 @@ message visible to all (e.g., "Dear loved ones, ...") |
 ```solidity
 function addMessageWithReward(
     externalEuint256[] calldata limbs,
-    uint32 emailByteLen,
+    externalEuint32 emailByteLen,
     externalEuint128 encSkShare,
     bytes calldata payload,
     bytes calldata inputProof,
@@ -727,10 +731,10 @@ Add a message with an ETH reward for delivery proof via zk-email.
 **Access**: Registered users only, with ETH payment
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `limbs` | `externalEuint256[]` |
-FHE-encrypted email (7 limbs) | | `emailByteLen` | `uint32` | Original email length | | `encSkShare` |
+FHE-encrypted email (7 limbs) | | `emailByteLen` | `externalEuint32` | FHE-encrypted original email length | | `encSkShare` |
 `externalEuint128` | FHE-encrypted key share | | `payload` | `bytes` | Encrypted payload | | `inputProof` | `bytes` |
 FHE input proof | | `publicMessage` | `string` | Plaintext public message | | `recipientEmailHashes` | `bytes32[]` |
-Poseidon hashes of each recipient email (for multi-recipient support) | | `payloadContentHash` | `bytes32` | Keccak256
+Salted Poseidon hashes of each recipient email: `Poseidon(PackBytes(email), senderAddress)` (for multi-recipient support) | | `payloadContentHash` | `bytes32` | Keccak256
 hash of decrypted payload (for verification) |
 
 **Returns**: | Name | Type | Description | |------|------|-------------| | `index` | `uint256` | Index of newly added
@@ -749,7 +753,7 @@ message |
 **Notes**:
 
 - Caller must send ETH via `msg.value` (payable function).
-- `recipientEmailHashes` should be Poseidon hashes of recipient emails (computed off-chain).
+- `recipientEmailHashes` should be salted Poseidon hashes: `Poseidon(PackBytes(email), senderAddress)` where `senderAddress` is `msg.sender`. The salt prevents dictionary attacks across users.
 - `payloadContentHash` is the Keccak256 hash of the _decrypted_ payload (known only to the claimer after decryption).
 - Reward is locked in contract until `claimReward()` is called (after all recipients proven).
 - Max 20 recipients (`MAX_RECIPIENTS`) to prevent state bloat. Bitmap tracking via `provenRecipientsBitmap`.
@@ -781,7 +785,7 @@ Get the number of messages stored by a user.
 function editMessage(
     uint256 index,
     externalEuint256[] calldata limbs,
-    uint32 emailByteLen,
+    externalEuint32 emailByteLen,
     externalEuint128 encSkShare,
     bytes calldata payload,
     bytes calldata inputProof,
@@ -795,7 +799,7 @@ Edit an unclaimed, unrevoked message (owner only).
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `index` | `uint256` | Message index in
 `users[msg.sender].messages[]` | | `limbs` | `externalEuint256[]` | New FHE-encrypted email | | `emailByteLen` |
-`uint32` | New email length | | `encSkShare` | `externalEuint128` | New FHE-encrypted key share | | `payload` | `bytes`
+`externalEuint32` | FHE-encrypted new email length | | `encSkShare` | `externalEuint128` | New FHE-encrypted key share | | `payload` | `bytes`
 | New encrypted payload | | `inputProof` | `bytes` | FHE input proof | | `publicMessage` | `string` | New public message
 |
 
@@ -856,7 +860,7 @@ Revoke an unclaimed message and refund any attached reward.
 ```solidity
 function computeMessageHash(
     externalEuint256[] calldata limbs,
-    uint32 emailByteLen,
+    externalEuint32 emailByteLen,
     externalEuint128 encSkShare,
     bytes calldata payload,
     string calldata publicMessage
@@ -868,7 +872,7 @@ Compute the Keccak256 hash of message inputs without adding the message.
 **Access**: Public (pure)
 
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `limbs` | `externalEuint256[]` | Message
-limbs | | `emailByteLen` | `uint32` | Email length | | `encSkShare` | `externalEuint128` | Encrypted key share | |
+limbs | | `emailByteLen` | `externalEuint32` | FHE-encrypted email length | | `encSkShare` | `externalEuint128` | Encrypted key share | |
 `payload` | `bytes` | Message payload | | `publicMessage` | `string` | Public message |
 
 **Returns**: | Name | Type | Description | |------|------|-------------| | ``|`bytes32` | Keccak256 hash of
@@ -914,9 +918,47 @@ already claimed |
 
 - Notifier (who called `markDeceased()`) has exclusive claim access for 24 hours.
 - After 24 hours, anyone can claim the same message.
+- Records `claimedAt = block.timestamp` for the delivery deadline. If the claimer does not complete delivery proofs within `DELIVERY_DEADLINE` (72 hours), anyone can call `resetClaim()` to unclaim the message.
 - Grants FHE decryption access via `FHE.allow()` to `msg.sender` for the email, key share, and sender's encrypted name limbs.
 - Once claimed, message cannot be edited or revoked.
-- Only one claimer per message (first to claim wins).
+- Only one claimer per message (first to claim wins, unless reset via `resetClaim()`).
+
+---
+
+### resetClaim()
+
+```solidity
+function resetClaim(address user, uint256 index) external
+```
+
+Reset a claimed message after the delivery deadline has expired. This unclaims the message so a new claimer can claim it.
+
+**Access**: Anyone, but subject to requirements
+
+**Parameters**: | Name | Type | Description | |------|------|-------------|
+| `user` | `address` | Deceased user address |
+| `index` | `uint256` | Message index |
+
+**Returns**: None
+
+**Reverts**: | Error | Reason | |-------|--------|
+| `"not deliverable"` | User is not deceased |
+| `"invalid index"` | `index >= users[user].messages.length` |
+| `"message was revoked"` | Message was revoked by owner |
+| `"message not claimed"` | Message has not been claimed |
+| `"delivery deadline not expired"` | `block.timestamp < claimedAt + DELIVERY_DEADLINE` |
+
+**Emits**:
+
+- `ClaimReset(user, index, previousClaimer)`
+
+**Notes**:
+
+- Resets `claimed = false`, `claimedBy = address(0)`, and `claimedAt = 0`.
+- The delivery deadline is `DELIVERY_DEADLINE` (72 hours) from `claimedAt`.
+- After reset, the message can be claimed again by any eligible party (subject to normal notifier exclusivity rules).
+- Prevents a claimer from indefinitely holding a message without completing delivery proofs.
+- Does NOT revoke FHE decryption access previously granted via `FHE.allow()` (FHE permissions are permanent).
 
 ---
 
@@ -926,12 +968,12 @@ already claimed |
 function retrieve(address owner, uint256 index) external view returns (
     euint128 skShare,
     euint256[] memory encodedRecipientEmail,
-    uint32 emailByteLen,
+    euint32 emailByteLen,
     bytes memory payload,
     string memory publicMessage,
     bytes32 hash,
     euint256[] memory nameLimbs,
-    uint32 nameByteLen
+    euint32 nameByteLen
 )
 ```
 
@@ -944,10 +986,10 @@ address | | `index` | `uint256` | Message index |
 
 **Returns**: | Name | Type | Description | |------|------|-------------| | `skShare` | `euint128` | FHE-encrypted key
 share (decryptable only by owner or approved claimer) | | `encodedRecipientEmail` | `euint256[]` | FHE-encrypted email
-limbs | | `emailByteLen` | `uint32` | Original email length | | `payload` | `bytes` | Encrypted payload (AES-encrypted
+limbs | | `emailByteLen` | `euint32` | FHE-encrypted original email length (decrypt to trim padding) | | `payload` | `bytes` | Encrypted payload (AES-encrypted
 client-side) | | `publicMessage` | `string` | Plaintext public message | | `hash` | `bytes32` | Keccak256 hash of
-original inputs | | `nameLimbs` | `euint256[]` | FHE-encrypted sender name limbs (4 limbs) | | `nameByteLen` | `uint32`
-| Original sender name length before padding |
+original inputs | | `nameLimbs` | `euint256[]` | FHE-encrypted sender name limbs (4 limbs) | | `nameByteLen` | `euint32`
+| FHE-encrypted original sender name length before padding |
 
 **Reverts**: | Error | Reason | |-------|--------| | `"invalid index"` | `index >= users[owner].messages.length` | |
 `"message was revoked"` | Message is revoked | | `"owner not deceased"` | Non-owner trying to retrieve from alive user |
@@ -1006,10 +1048,11 @@ already proven (bitmap bit already set) | | `"invalid proof"` | Proof verificati
 
 **Proof Verification Logic**:
 
-1. Check `proof.publicSignals[0]` (Poseidon email hash) matches `message.recipientEmailHashes[recipientIndex]`
+1. Check `proof.publicSignals[0]` (salted Poseidon email hash) matches `message.recipientEmailHashes[recipientIndex]`
 2. Check `proof.publicSignals[1]` (DKIM key hash) is in trusted set
 3. Check `proof.publicSignals[2]` (content hash) matches `message.payloadContentHash`
-4. Verify Groth16 proof via `zkEmailVerifier.verifyProof()`
+4. Check `proof.publicSignals[3]` (sender address) matches the message owner
+5. Verify Groth16 proof via `zkEmailVerifier.verifyProof()`
 
 **Notes**:
 
@@ -1101,8 +1144,8 @@ Get the Poseidon hash of a specific recipient email.
 **Parameters**: | Name | Type | Description | |------|------|-------------| | `user` | `address` | User address | |
 `messageIndex` | `uint256` | Message index | | `recipientIndex` | `uint256` | Recipient index (0-based) |
 
-**Returns**: | Name | Type | Description | |------|------|-------------| | ``|`bytes32` | Poseidon hash of the recipient
-email |
+**Returns**: | Name | Type | Description | |------|------|-------------| | ``|`bytes32` | Salted Poseidon hash of the recipient
+email: `Poseidon(PackBytes(email), senderAddress)` |
 
 **Reverts**: | Error | Reason | |-------|--------| | `"invalid index"` | `messageIndex >= users[user].messages.length` |
 | `"invalid recipient"` | `recipientIndex >= message.recipientEmailHashes.length` |
@@ -1673,6 +1716,22 @@ Emitted when a message is claimed via `claim()`.
 
 ---
 
+### ClaimReset
+
+```solidity
+event ClaimReset(address indexed user, uint256 indexed index, address indexed previousClaimer)
+```
+
+Emitted when a claimed message is reset via `resetClaim()` after the delivery deadline expires.
+
+| Indexed | Name              | Type      | Description                          |
+| ------- | ----------------- | --------- | ------------------------------------ |
+| Yes     | `user`            | `address` | Deceased user's address              |
+| Yes     | `index`           | `uint256` | Message index                        |
+| Yes     | `previousClaimer` | `address` | Address of the claimer being removed |
+
+---
+
 ### CouncilMemberAdded
 
 ```solidity
@@ -1877,6 +1936,7 @@ Complete table of all error strings and their causes.
 | `"still exclusive for the notifier"` | `claim()`                                        | Within 24h of marking and caller not notifier |
 | `"message was revoked"`              | `claim()`, `retrieve()`                          | Message revoked                               |
 | `"already claimed"`                  | `claim()`                                        | Message already claimed                       |
+| `"delivery deadline not expired"`    | `resetClaim()`                                   | Delivery deadline has not yet expired         |
 | `"owner not deceased"`               | `retrieve()`                                     | Non-owner retrieving for alive user           |
 | `"message not claimed"`              | `retrieve()`, `proveDelivery()`, `claimReward()` | Message not claimed                           |
 | `"not claimant"`                     | `retrieve()`                                     | Non-owner not the claimer                     |
