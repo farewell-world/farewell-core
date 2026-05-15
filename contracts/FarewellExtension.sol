@@ -829,7 +829,7 @@ contract FarewellExtension is FarewellStorage {
         if ((m.provenRecipientsBitmap & (1 << recipientIndex)) != 0) revert AlreadyProven();
 
         // Verify proof
-        if (!_verifyZkEmailProof(proof, m, recipientIndex)) revert InvalidProof();
+        if (!_verifyZkEmailProof(proof, m, recipientIndex, user)) revert InvalidProof();
 
         // Mark recipient as proven
         m.provenRecipientsBitmap |= (1 << recipientIndex);
@@ -841,36 +841,46 @@ contract FarewellExtension is FarewellStorage {
     /// @param proof The Groth16 proof to verify
     /// @param m The message storage reference
     /// @param recipientIndex The recipient index to verify
+    /// @param senderAddress The address of the message sender (deceased user)
     /// @return True if the proof is valid
     function _verifyZkEmailProof(
         ZkEmailProof calldata proof,
         Message storage m,
-        uint256 recipientIndex
+        uint256 recipientIndex,
+        address senderAddress
     ) internal view returns (bool) {
         // Public signals layout (zk-email circuit):
         // [0] = Poseidon hash of recipient email (TO field)
         // [1] = DKIM public key hash
         // [2] = Content hash from email body
+        // [3] = Sender address (uint256 cast of the deceased user's address)
 
-        // 1. Verify recipient email hash matches stored commitment
-        if (proof.publicSignals.length < 3) {
+        // 1. Verify minimum number of public signals
+        if (proof.publicSignals.length < 4) {
             return false;
         }
+
+        // 2. Verify recipient email hash matches stored commitment
         if (bytes32(proof.publicSignals[0]) != m.recipientEmailHashes[recipientIndex]) {
             return false;
         }
 
-        // 2. Verify DKIM key is trusted (using global domain for now)
+        // 3. Verify DKIM key is trusted (using global domain for now)
         if (!_isTrustedDkimKey(proof.publicSignals[1])) {
             return false;
         }
 
-        // 3. Verify content hash matches
+        // 4. Verify content hash matches
         if (bytes32(proof.publicSignals[2]) != m.payloadContentHash) {
             return false;
         }
 
-        // 4. Verify Groth16 proof
+        // 5. Verify sender address matches the deceased user
+        if (proof.publicSignals[3] != uint256(uint160(senderAddress))) {
+            return false;
+        }
+
+        // 6. Verify Groth16 proof
         if (zkEmailVerifier == address(0)) revert VerifierNotConfigured();
         return IGroth16Verifier(zkEmailVerifier).verifyProof(proof.pA, proof.pB, proof.pC, proof.publicSignals);
     }
