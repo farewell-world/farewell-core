@@ -528,10 +528,11 @@ describe("FarewellTestMode", function () {
       tx = await contract.setTrustedDkimKey(ethers.ZeroHash, pubkeyHash, true);
       await tx.wait();
 
-      // FHE-encrypt email + skShare
+      // FHE-encrypt email + skShare + emailByteLen
       const enc = fhevm.createEncryptedInput(contractAddress, owner.address);
       for (const w of rewardEmailWords) enc.add256(w);
       enc.add128(rewardSkShare);
+      enc.add32(rewardEmailBytes.length);
       const encrypted = await enc.encrypt();
       const nLimbs = rewardEmailWords.length;
 
@@ -540,11 +541,11 @@ describe("FarewellTestMode", function () {
 
       // Add message with ETH reward
       tx = await contract.connect(owner)[
-        "addMessageWithReward(bytes32[],uint32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
+        "addMessageWithReward(bytes32[],bytes32,bytes32,bytes,bytes,string,string,bytes32[],bytes32,address,uint256)"
       ](
         encrypted.handles.slice(0, nLimbs),
-        rewardEmailBytes.length,
-        encrypted.handles[nLimbs],
+        encrypted.handles[nLimbs + 1], // encrypted emailByteLen handle
+        encrypted.handles[nLimbs],     // encrypted skShare handle
         rewardPayloadBytes,
         encrypted.inputProof,
         "",
@@ -578,7 +579,7 @@ describe("FarewellTestMode", function () {
     it("happy path: prove delivery + claim reward", async function () {
       await setupClaimableMessage();
 
-      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(owner.address)]);
       let tx = await contract.connect(alice).proveDelivery(owner.address, 0, 0, proof);
       await tx.wait();
 
@@ -595,7 +596,7 @@ describe("FarewellTestMode", function () {
       await setupClaimableMessage();
       await verifier.setResult(false);
 
-      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(owner.address)]);
       await expect(
         contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
       ).to.be.revertedWithCustomError(contract, "InvalidProof");
@@ -605,7 +606,7 @@ describe("FarewellTestMode", function () {
       await setupClaimableMessage();
 
       const wrongEmailHash = ethers.keccak256(ethers.toUtf8Bytes("wrong@example.com"));
-      const proof = makeProof([BigInt(wrongEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      const proof = makeProof([BigInt(wrongEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(owner.address)]);
       await expect(
         contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
       ).to.be.revertedWithCustomError(contract, "InvalidProof");
@@ -615,7 +616,7 @@ describe("FarewellTestMode", function () {
       await setupClaimableMessage();
 
       const untrustedKey = 99999n;
-      const proof = makeProof([BigInt(recipientEmailHash), untrustedKey, BigInt(payloadContentHash)]);
+      const proof = makeProof([BigInt(recipientEmailHash), untrustedKey, BigInt(payloadContentHash), BigInt(owner.address)]);
       await expect(
         contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
       ).to.be.revertedWithCustomError(contract, "InvalidProof");
@@ -625,7 +626,7 @@ describe("FarewellTestMode", function () {
       await setupClaimableMessage();
 
       const wrongContentHash = ethers.keccak256(ethers.toUtf8Bytes("tampered content"));
-      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(wrongContentHash)]);
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(wrongContentHash), BigInt(owner.address)]);
       await expect(
         contract.connect(alice).proveDelivery(owner.address, 0, 0, proof),
       ).to.be.revertedWithCustomError(contract, "InvalidProof");
@@ -634,7 +635,7 @@ describe("FarewellTestMode", function () {
     it("rejects double proof for same recipient", async function () {
       await setupClaimableMessage();
 
-      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(owner.address)]);
       const tx = await contract.connect(alice).proveDelivery(owner.address, 0, 0, proof);
       await tx.wait();
 
@@ -646,7 +647,7 @@ describe("FarewellTestMode", function () {
     it("rejects non-claimant from proving delivery", async function () {
       await setupClaimableMessage();
 
-      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash)]);
+      const proof = makeProof([BigInt(recipientEmailHash), pubkeyHash, BigInt(payloadContentHash), BigInt(owner.address)]);
       await expect(
         contract.connect(bob).proveDelivery(owner.address, 0, 0, proof),
       ).to.be.revertedWithCustomError(contract, "NotClaimant");
