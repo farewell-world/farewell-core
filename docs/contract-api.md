@@ -45,8 +45,7 @@ The contract ABI and bytecode are available at:
 artifacts/contracts/Farewell.sol/Farewell.json
 ```
 
-For web3 integrations, the ABI can be imported from TypeScript tooling or the `farewell` UI package generates TypeScript
-bindings via `genabi`.
+For web3 integrations, the ABI can be imported into TypeScript tooling to generate typed bindings.
 
 ---
 

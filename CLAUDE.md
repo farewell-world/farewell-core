@@ -278,10 +278,10 @@ npx hardhat deploy --network sepolia
 
 ## Cross-Project Compatibility
 
-**IMPORTANT**: Changes to the contract interface affect both the Farewell UI and farewell-claimer:
+**IMPORTANT**: Changes to the contract interface affect downstream consumers of this contract:
 
-1. **Farewell UI** ([farewell.world](https://farewell.world)) — generates ABIs from this contract via `genabi`. If you
-   change function signatures, events, or structs, the UI's ABI must be regenerated.
+1. **Web client** ([farewell.world](https://farewell.world)) — consumes this contract's ABI. If you
+   change function signatures, events, or structs, any client's generated ABI must be regenerated.
 2. **farewell-claimer** ([repo](https://github.com/farewell-world/farewell-claimer)) — parses claim package JSON files
    that contain data from `retrieve()`. If you change the retrieve return format or message struct fields, update the
    claimer's `_load_claim_package()` accordingly.
@@ -317,7 +317,7 @@ npx hardhat deploy --network sepolia
 
 1. **Update this CLAUDE.md** if contract interfaces, events, or architecture change
 2. **Update README.md** if user-facing documentation changes
-3. **Regenerate ABI** in farewell UI repo: `npm run genabi`
+3. **Regenerate ABI** for any downstream client after interface changes
 4. **Run tests** before committing: `npx hardhat test`
 5. **Check gas costs** for new functions: `npx hardhat test --reporter gas`
 6. **Keep documentation in sync** with code changes:
