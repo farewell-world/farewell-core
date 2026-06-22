@@ -290,3 +290,19 @@ or downloaded from the GitHub Release).
 - [Claimer User Guide](./claimer-guide.md) — Step-by-step workflow
 - [farewell-core Protocol](https://github.com/farewell-world/farewell-core) — Smart contract implementation
 - [zk.email Documentation](https://docs.zk.email/) — Circuit design and verification
+
+## Update (2026-06-22): provider-agnostic body marker (removeSoftLineBreaks)
+
+Email providers quoted-printable-encode the body and soft-wrap lines at 76
+columns, splitting the 81-char `Farewell-Hash: 0x<64hex>` marker. The delivery
+circuit now compiles with `removeSoftLineBreaks = 1`: the DKIM body hash is still
+verified over the raw (wrapped) body, but soft line breaks are removed *inside*
+the circuit before the marker is extracted, so the contiguous content hash
+survives any provider's wrapping (validated against a real AgentMail/SES email).
+
+Provers must call `generateEmailVerifierInputs` with `removeSoftLineBreaks: true`
+(which supplies `decodedEmailBodyIn`) and compute `contentHashMarkerStart` against
+the **decoded** body. A new Groth16 verifier (regenerated from a fresh trusted
+setup) is deployed on Sepolia at `0xc63cB10e9CC7f43A83007d6baBAC13a49E5ca389` and
+wired via `setZkEmailVerifier`; proofs from the previous circuit/keys no longer
+verify.
