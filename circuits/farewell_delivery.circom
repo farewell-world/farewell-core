@@ -53,6 +53,11 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
     signal input emailBodyLength;
     signal input bodyHashIndex;
     signal input precomputedSHA[32];
+    // Decoded body with quoted-printable soft line breaks removed. EmailVerifier
+    // (removeSoftLineBreaks=1) verifies the DKIM body hash over the raw emailBody,
+    // then constrains this as the correct soft-line-break-removed decode. We
+    // extract the content-hash marker from this so it survives provider QP wrapping.
+    signal input decodedEmailBodyIn[maxBodyLength];
 
     // ---- Farewell-specific private inputs ----
     signal input recipientEmailStart;
@@ -60,7 +65,7 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
     // The 32-byte payload content hash the contract stored at message-
     // create time (m.payloadContentHash).
     signal input contentHashIn;
-    // Byte offset in emailBody where "Farewell-Hash: 0x" begins.
+    // Byte offset in the DECODED body where "Farewell-Hash: 0x" begins.
     signal input contentHashMarkerStart;
 
     // Ethereum address of the farewell message sender (salt for recipient hash)
@@ -81,7 +86,7 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
         /* ignoreBodyHashCheck */ 0,
         /* enableHeaderMasking */ 0,
         /* enableBodyMasking   */ 0,
-        /* removeSoftLineBreaks*/ 0
+        /* removeSoftLineBreaks*/ 1
     );
     ev.emailHeader      <== emailHeader;
     ev.emailHeaderLength <== emailHeaderLength;
@@ -91,6 +96,7 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
     ev.emailBodyLength  <== emailBodyLength;
     ev.bodyHashIndex    <== bodyHashIndex;
     ev.precomputedSHA   <== precomputedSHA;
+    ev.decodedEmailBodyIn <== decodedEmailBodyIn;
 
     dkimKeyHash <== ev.pubkeyHash;
 
@@ -134,7 +140,7 @@ template FarewellDelivery(maxHeadersLength, maxBodyLength, maxRecipientBytes, n,
         totalExtract,
         /* shouldCheckUniqueness */ 0
     );
-    hashReveal.in                  <== emailBody;
+    hashReveal.in                  <== decodedEmailBodyIn;
     hashReveal.substringStartIndex <== contentHashMarkerStart;
     hashReveal.substringLength     <== totalExtract;
 
