@@ -267,8 +267,8 @@ or downloaded from the GitHub Release).
 
 | Contract | Address |
 |----------|---------|
-| Farewell (proxy) | `0xE494835ffd293E57655e61Ed854CA7a39130174e` |
-| FarewellGroth16Verifier | `0xF73400562fc1EFf15de8F4b6be142b7B9d66bD01` |
+| Farewell (proxy) | `0x97c3920d82069eFc8CF15292453E104C35AF8ECa` |
+| FarewellGroth16Verifier | `0xc63cB10e9CC7f43A83007d6baBAC13a49E5ca389` |
 
 ## Security Properties
 
